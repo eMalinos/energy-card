@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="cs">
+<head><meta charset="utf-8"><title>energy-card DOM checks</title>
+<style>body{margin:0;padding:16px;background:#efefef;font-family:Roboto,system-ui,sans-serif}</style>
+</head>
+<body>
+<!--
+  Browser checks with a fake hass (states + callWS returning generated hours). Run:
+  python3 -m http.server 8765 &
+  "Google Chrome" --headless=new --virtual-time-budget=5000 --dump-dom http://localhost:8765/tests/dom.html | grep RESULT
+  Screenshots: ?shot=card | stats | meter, e.g.
+  "Google Chrome" --headless=new --virtual-time-budget=5000 --window-size=512,1000 --screenshot=docs/card.png "http://localhost:8765/tests/dom.html?shot=card"
+-->
+<div id="box" style="width:480px"></div>
+<pre id="out"></pre>
+<script type="module">
+  const errors = [];
+  addEventListener('error', (e) => errors.push(e.message));
+  const origError = console.error;
+  console.error = (...a) => { errors.push(a.join(' ')); origError(...a); };
+
+  await import('../dist/energy-card.js');
+
+  const D25D = {
+    name: 'ČEZ Refix D25d', valid_from: '2025-02-01', valid_to: '', vt: 6045.56, nt: 3551.62, poze: 598.95, fixed: 454.77,
+    nt_windows: { workday: ['00:00-04:10', '16:55-18:55', '22:10-24:00'], weekend_holiday: ['01:55-05:50', '15:20-17:50', '22:25-24:00'] },
+  };
+  // A household day: morning and evening peaks, a little more in winter.
+  const kwhAt = (t) => {
+    const d = new Date(t), h = d.getHours();
+    const season = 1 + 0.35 * Math.cos(((d.getMonth() + 0.5) / 12) * 2 * Math.PI);
+    const noise = 0.85 + 0.3 * Math.abs(Math.sin(t / 3.7e6));
+    return +((0.22 + 0.55 * Math.exp(-((h - 7) ** 2) / 3) + 0.9 * Math.exp(-((h - 19) ** 2) / 5)) * season * noise).toFixed(3);
+  };
+  const ws = [];
+  const calls = [];
+  const states = {
+    'sensor.total_power': { state: '1460' },
+    'sensor.phase_a': { state: '412' }, 'sensor.phase_b': { state: '690' }, 'sensor.phase_c': { state: '358' },
+    'sensor.hfb_energy_meter_vt': { state: '31204.37' },
+    'sensor.hfb_energy_meter_nt': { state: '17108.02' },
+    'sensor.hfb_energy_meter_history': { state: '2', attributes: { entries: [
+      { time: '2025-02-14T10:00:00+01:00', kind: 'align', vt: 26100, nt: 15770, old_vt: null, old_nt: null },
+      { time: '2026-10-12T18:30:00+02:00', kind: 'align', vt: 31020, nt: 17100, old_vt: null, old_nt: null },
+    ] } },
+  };
+  const hass = {
+    states,
+    callWS: async (msg) => {
+      ws.push(msg);
+      const out = [];
+      const end = Date.parse(msg.end_time);
+      // hourly rows exist for finished hours only
+      for (let t = Math.ceil(Date.parse(msg.start_time) / 3.6e6) * 3.6e6; t + 3.6e6 <= end; t += 3.6e6) out.push({ start: t, end: t + 3.6e6, change: kwhAt(t) });
+      return { [msg.statistic_ids[0]]: out };
+    },
+    callService: async (domain, service, data) => { calls.push({ domain, service, data }); },
+  };
+
+  const card = document.createElement('energy-card');
+  card.setConfig({
+    energy_entity: 'sensor.total_energy', power_entity: 'sensor.total_power',
+    phase_entities: ['sensor.phase_a', 'sensor.phase_b', 'sensor.phase_c'],
+    meter_vt: 'sensor.hfb_energy_meter_vt', meter_nt: 'sensor.hfb_energy_meter_nt',
+    meter_history: 'sensor.hfb_energy_meter_history', meter_script: 'script.hfb_energy_meter_set',
+    price_lists: JSON.stringify([D25D]), accent: '#0288d1',
+  });
+  card.hass = hass;
+  document.getElementById('box').appendChild(card);
+  const root = card.shadowRoot;
+  const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+  const $ = (s) => root.querySelector(s);
+  const click = (s) => $(s).click();
+  const type = (s, v) => { const i = $(s); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true, composed: true })); };
+  await tick(200);
+
+  const shot = new URLSearchParams(location.search).get('shot');
+  if (shot === 'stats') { click('[data-act="stats"]'); await tick(200); }
+  if (shot === 'meter') { click('[data-act="meter"]'); type('#m_vt', '31 210,5'); type('#m_nt', '17 109'); await tick(); }
+  if (shot) { document.getElementById('out').remove(); throw 'shot'; }
+
+  const r = {};
+  r.statsQuery = ws[0]?.type === 'recorder/statistics_during_period' && ws[0].period === 'hour' && ws[0].types[0] === 'change' && ws.length === 3;
+  r.header = $('.sub').textContent === 'L1 412 W · L2 690 W · L3 358 W' && $('.now b').textContent.replace(/\s/g, ' ') === '1 460';
+  r.twoRegisters = root.querySelectorAll('.meter .reg').length === 2 && $('.meter .reg').textContent.replace(/\s/g, ' ').startsWith('31 204,4');
+  r.monthDefault = $('[data-act="gran"][aria-selected="true"]').dataset.val === 'month';
+  r.kwhShown = !$('.big').textContent.startsWith('–') && /≈ [\d\s]+ Kč/.test($('.kc b').textContent);
+  r.fourChips = root.querySelectorAll('.chips .chip').length === 4;
+  r.ntLine = /^NT \d+ % · VT \d+ %$/.test([...root.querySelectorAll('.sum .note')].map((n) => n.textContent).find((t) => t.startsWith('NT')) || '');
+  r.flowAnimated = !!$('.flow .fl');
+
+  // Rok: one comparison (vs last year), kWh and Kč
+  click('[data-act="gran"][data-val="year"]'); await tick(200);
+  r.yearChips = root.querySelectorAll('.chips .chip').length === 2;
+  click('[data-act="gran"][data-val="month"]'); await tick();
+
+  // Cached: no new statistics calls for a tab seen within 5 minutes
+  const n = ws.length;
+  click('[data-act="gran"][data-val="year"]'); await tick(); click('[data-act="gran"][data-val="month"]'); await tick();
+  r.cached = ws.length === n;
+
+  // Stats pop-up
+  click('[data-act="stats"]'); await tick(200);
+  const dlg = $('dialog.stats');
+  const now = new Date();
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  r.statsOpen = dlg.open && dlg.querySelectorAll('.bars > div').length === days && dlg.querySelectorAll('.kpis > div').length === 4 && dlg.querySelectorAll('.pills button').length === 2;
+  click('[data-act="sunit"][data-val="kc"]'); await tick();
+  r.statsKc = dlg.querySelector('.cmp .unit').textContent === 'Kč' && dlg.querySelector('.kpis > div:last-child .lbl').textContent === 'Vč. stálých plateb';
+  click('[data-act="scmp"][data-val="yoy"]'); await tick();
+  r.statsYoy = dlg.querySelector('.pills [aria-checked="true"]').dataset.val === 'yoy';
+  click('[data-act="sgran"][data-val="year"]'); await tick(200);
+  r.statsYear = dlg.querySelectorAll('.bars > div').length === 12 && !dlg.querySelector('.pills');
+  click('[data-act="sgran"][data-val="day"]'); await tick(200);
+  r.statsDay = dlg.querySelectorAll('.bars > div').length === 24;
+  dlg.querySelector('[data-act="close"]').click(); await tick();
+  r.statsClosed = !dlg.open;
+
+  // Meter pop-up: align with two registers
+  click('[data-act="meter"]'); await tick();
+  const md = $('dialog.meterdlg');
+  r.meterOpen = md.open && !!md.querySelector('#m_vt') && !!md.querySelector('#m_nt');
+  r.saveDisabled = md.querySelector('[data-act="save"]').disabled;
+  r.historyNewestFirst = md.querySelector('.hist .row span').textContent === '12. 10. 2026' && md.querySelectorAll('.hist .row').length === 2;
+  type('#m_vt', '31 210,5'); type('#m_nt', '17109');
+  r.preview = md.querySelector('.prev').textContent.replace(/\s/g, ' ').includes('+6,1 kWh') && document.activeElement === card;
+  click('[data-act="save"]'); await tick();
+  r.alignCall = JSON.stringify(calls[0]) === JSON.stringify({ domain: 'script', service: 'hfb_energy_meter_set', data: { kind: 'align', vt: 31210.5, nt: 17109 } })
+    && md.querySelector('[data-act="save"]').textContent === 'Uloženo';
+
+  // Replacement: optional old final values, date passed along
+  click('[data-act="mode"][data-val="replace"]'); await tick();
+  type('#m_vt', '0'); type('#m_nt', '0'); type('#m_old_vt', '31211');
+  click('[data-act="save"]'); await tick();
+  const d = calls[1]?.data || {};
+  r.replaceCall = d.kind === 'replace' && d.vt === 0 && d.nt === 0 && d.old_vt === 31211 && !('old_nt' in d) && /^\d{4}-\d{2}-\d{2}$/.test(d.date);
+  md.close();
+
+  // Re-render on hass updates keeps the open meter form
+  click('[data-act="meter"]'); await tick();
+  type('#m_vt', '123');
+  card.hass = { ...hass, states: { ...states, 'sensor.total_power': { state: '900' } } }; await tick();
+  r.formKept = $('#m_vt').value === '123' && $('.now b').textContent === '900';
+  md.close();
+
+  // Single tariff: one register, one input, no NT line
+  card.setConfig({ ...card._cfg, price_lists: [{ ...D25D, nt: null, nt_windows: { workday: [], weekend_holiday: [] } }] });
+  await tick(200);
+  r.singleTariff = root.querySelectorAll('.meter .reg').length === 1 && ![...root.querySelectorAll('.sum .note')].some((n) => n.textContent.startsWith('NT'));
+  click('[data-act="meter"]'); await tick();
+  r.singleInput = !!$('#m_vt') && !$('#m_nt');
+  md.close();
+
+  // No price list covering the period
+  card.setConfig({ ...card._cfg, price_lists: [] }); await tick(200);
+  r.unpricedNote = [...root.querySelectorAll('.sum .note')].some((n) => n.textContent === 'část období bez ceníku');
+
+  r.noErrors = errors.length === 0;
+  const ok = Object.values(r).every(Boolean);
+  document.getElementById('out').textContent = 'RESULT ' + (ok ? 'PASS ' : 'FAIL ') + JSON.stringify(r) + (errors.length ? ' ERRORS ' + JSON.stringify(errors) : '');
+</script>
+</body>
+</html>
