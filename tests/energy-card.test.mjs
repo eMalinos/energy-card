@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeConfig, easterSunday, czechHolidays, dayType, listFor, ntMinutes, priceHours, fixedFor, ranges, names, buckets, pct, parseNum, fmt,
+  normalizeConfig, easterSunday, czechHolidays, dayType, listFor, ntMinutes, priceHours, fixedFor, ranges, names, buckets, pct, parseNum, fmt, toDay, analyze, dataEnd, fetchHours,
 } from '../dist/energy-card.js';
 
 // The current contract (spec, Facts): ČEZ D25d, incl. VAT.
@@ -143,4 +143,65 @@ test('parseNum and fmt', () => {
   assert.equal(parseNum('48315.5'), 48315.5);
   assert.ok(Number.isNaN(parseNum('')));
   assert.equal(fmt(1460, 0).replace(/\s/g, ' '), '1 460');
+});
+
+test('normalizeConfig: price list dates as YYYY-MM-DD', () => {
+  assert.equal(toDay('2025-02-01'), '2025-02-01');
+  assert.equal(toDay(new Date(2025, 1, 1)), '2025-02-01');
+  assert.equal(toDay(new Date(2025, 1, 1).toISOString()), '2025-02-01'); // local midnight serialised as UTC
+  assert.equal(toDay('2025-02-01T00:00:00'), '2025-02-01');
+  assert.equal(toDay(''), '');
+  assert.equal(toDay(null), '');
+  const n = normalizeConfig({ ...CFG, price_lists: [{ ...D25D, valid_from: new Date(2025, 1, 1), valid_to: null }] });
+  assert.equal(n.price_lists[0].valid_from, '2025-02-01');
+  assert.equal(n.price_lists[0].valid_to, '');
+  assert.equal(listFor(n.price_lists, at(2025, 2, 1)), n.price_lists[0]);
+});
+
+// Hourly rows 1 kWh each, [from, to)
+const rows = (from, to) => {
+  const out = [];
+  for (let t = +from; t < +to; t += 3600000) out.push({ start: new Date(t), kwh: 1 });
+  return out;
+};
+
+test('analyze: like-for-like over complete hours', () => {
+  const now = at(2026, 11, 10, 14, 37);
+  // the current day has rows up to 13:00-14:00; yesterday is complete
+  const a = analyze('day', now, [SINGLE], rows(at(2026, 11, 10), at(2026, 11, 10, 14)), rows(at(2026, 11, 9), at(2026, 11, 10)), rows(at(2025, 11, 10), at(2025, 11, 11)));
+  assert.equal(+a.end, +at(2026, 11, 10, 14));
+  assert.equal(a.cur.kwh, 14);
+  assert.equal(a.prev.kwh, 14);
+  assert.equal(a.yoy.kwh, 14);
+  assert.equal(+a.r.prev[1], +at(2026, 11, 9, 14));
+  // statistics lag: the last row is 10:00-11:00, so the comparison stops at 11:00 too
+  const lag = analyze('day', now, [SINGLE], rows(at(2026, 11, 10), at(2026, 11, 10, 11)), rows(at(2026, 11, 9), at(2026, 11, 10)), null);
+  assert.equal(lag.prev.kwh, 11);
+  assert.equal(lag.yoy, null); // not fetched
+  close(lag.cur.fixed, (300 * 11) / 24 / 30);
+  close(lag.prev.fixed, lag.cur.fixed);
+  // no rows yet today: empty on both sides
+  const none = analyze('day', at(2026, 11, 10, 0, 20), [SINGLE], [], rows(at(2026, 11, 9), at(2026, 11, 10)), null);
+  assert.equal(none.cur.kwh, 0);
+  assert.equal(none.prev.kwh, 0);
+  // month: data up to 3. 6. 06:00 -> May cut at 3. 5. 06:00 (no DST change in these days anywhere tested)
+  const m = analyze('month', at(2026, 6, 3, 9, 15), [SINGLE], rows(at(2026, 6, 1), at(2026, 6, 3, 6)), rows(at(2026, 5, 1), at(2026, 5, 3, 9)), rows(at(2025, 6, 1), at(2025, 6, 3, 9)));
+  assert.equal(m.cur.kwh, 54);
+  assert.equal(m.prev.kwh, 54);
+  assert.equal(m.yoy.kwh, 54);
+  assert.equal(m.hours.prev.length, 54);
+});
+
+test('dataEnd: never past the current full hour, never before the start', () => {
+  const start = at(2026, 11, 10);
+  assert.equal(+dataEnd([{ start: at(2026, 11, 10, 14) }], start, at(2026, 11, 10, 14, 30)), +at(2026, 11, 10, 14));
+  assert.equal(+dataEnd([], start, at(2026, 11, 10, 9)), +start);
+});
+
+test('fetchHours: hourly change in kWh', async () => {
+  let msg;
+  const hours = await fetchHours({ callWS: async (m) => { msg = m; return { 'sensor.e': [{ start: +at(2026, 11, 10, 1), change: 0.5 }] }; } }, 'sensor.e', at(2026, 11, 10), at(2026, 11, 11));
+  assert.deepEqual({ type: msg.type, period: msg.period, types: msg.types, units: msg.units }, { type: 'recorder/statistics_during_period', period: 'hour', types: ['change'], units: { energy: 'kWh' } });
+  assert.equal(+hours[0].start, +at(2026, 11, 10, 1));
+  assert.equal(hours[0].kwh, 0.5);
 });

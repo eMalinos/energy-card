@@ -35,6 +35,14 @@ export function parseNum(s) {
   return t === '' ? NaN : Number(t);
 }
 
+// Price list dates as `YYYY-MM-DD`: a Date or an ISO date-time (YAML/JSON round trips) -> its local date.
+export function toDay(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(+d) ? String(v) : isoDay(d);
+}
+
 export function normalizeConfig(config) {
   for (const k of REQUIRED) {
     if (!config || !config[k]) throw new Error(`energy-card: ${k} is required`);
@@ -44,10 +52,11 @@ export function normalizeConfig(config) {
     try { lists = JSON.parse(lists); } catch { throw new Error('energy-card: price_lists is not valid JSON'); }
   }
   if (!Array.isArray(lists)) throw new Error('energy-card: price_lists must be a list');
+  lists = lists.map((l) => ({ ...l, valid_from: toDay(l.valid_from), valid_to: toDay(l.valid_to) }));
   return {
     ...config,
     phase_entities: config.phase_entities || [],
-    price_lists: [...lists].sort((a, b) => String(a.valid_from).localeCompare(String(b.valid_from))),
+    price_lists: lists.sort((a, b) => a.valid_from.localeCompare(b.valid_from)),
     accent: config.accent || '#0288d1',
   };
 }
@@ -168,6 +177,27 @@ export function summarize(hours, lists, from, to) {
   return { ...p, fixed, total: p.kc + fixed };
 }
 
+const HOUR_MS = 3600000;
+export const hourFloor = (d) => new Date(Math.floor(+d / HOUR_MS) * HOUR_MS);
+
+// Where the current range's data ends: the end of its last hourly row (statistics lag behind
+// `now`), never past the current full hour and never before the range start.
+export function dataEnd(curHours, start, now) {
+  const last = curHours.reduce((m, h) => Math.max(m, +h.start + HOUR_MS), +start);
+  return new Date(Math.max(+start, Math.min(last, +hourFloor(now))));
+}
+
+// Like-for-like over complete hours: cut every range at the offset where the current data ends,
+// then sum each. `cur`, `prev`, `yoy` = hours fetched for ranges(hourFloor(now), gran).
+export function analyze(gran, now, lists, cur, prev, yoy) {
+  const end = dataEnd(cur, ranges(now, gran).cur[0], now);
+  const r = ranges(end, gran);
+  const cut = (hs, rg) => (hs && rg ? hs.filter((h) => h.start >= rg[0] && h.start < rg[1]) : null);
+  const hours = { cur: cut(cur, r.cur), prev: cut(prev, r.prev), yoy: cut(yoy, r.yoy) };
+  const sum = (k) => hours[k] && summarize(hours[k], lists, ...r[k]);
+  return { end, r, hours, cur: sum('cur'), prev: sum('prev'), yoy: sum('yoy') };
+}
+
 export function bucketIndex(gran, d) {
   return gran === 'day' ? d.getHours() : gran === 'month' ? d.getDate() - 1 : d.getMonth();
 }
@@ -221,6 +251,7 @@ export async function fetchHours(hass, entity, start, end) {
     statistic_ids: [entity],
     period: 'hour',
     types: ['change'],
+    units: { energy: 'kWh' },
   });
   return (res?.[entity] || []).map((x) => ({ start: new Date(x.start), kwh: x.change ?? 0 }));
 }
@@ -265,6 +296,7 @@ button{cursor:pointer}
 .fl{fill:none;stroke-width:2;stroke-linecap:round;stroke-dasharray:0.1 10;animation:flow 1.1s linear infinite}
 .fb{fill:none;stroke-width:1.5;opacity:.35}
 @media (prefers-reduced-motion:reduce){.fl{animation:none}}
+.flow.idle .fl{display:none}
 .pf{position:absolute;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--ec-muted);white-space:nowrap}
 .pf .c{width:78px;height:78px;box-sizing:border-box;border-radius:50%;background:var(--ec-bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;font-weight:500;color:var(--ec-text)}
 .seg{display:flex;background:var(--ec-soft);border-radius:12px;padding:3px;gap:3px}
@@ -367,15 +399,18 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     this._cfg = normalizeConfig(config);
     this._cache = {};
     this.style.setProperty('--ec-accent', this._cfg.accent);
-    this._key = '';
     if (this._hass) { this._render(); this._load(this._gran); }
   }
 
+  // Structure is rendered on config / data / tab changes; a hass update only patches the live values
+  // (keeps focus and the flow animation) and reloads statistics once the 5-minute cache is stale.
   set hass(hass) {
-    const first = !this._hass;
     this._hass = hass;
-    this._render();
-    if (first && this._cfg) this._load(this._gran);
+    if (!this._cfg) return;
+    if (this._card.firstChild) this._live(); else this._render();
+    if (this._meter && this._meterDlg.open) this._refreshMeter();
+    this._load(this._gran);
+    if (this._statsDlg.open) this._load(this._stats.gran);
   }
 
   getCardSize() {
@@ -395,24 +430,26 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     document.removeEventListener('visibilitychange', this._onVisibility);
   }
 
-  // Hours of the ranges of `gran`, cached for 5 minutes.
+  // Hours of the ranges of `gran` with their summaries, cached for 5 minutes and per range start
+  // (Den rolls over at midnight).
   _load(gran) {
-    const c = this._cache[gran];
-    if ((c && Date.now() - c.at < CACHE_MS) || this._loading[gran] || !this._hass || !this._cfg) return;
+    if (!this._hass || !this._cfg || this._loading[gran]) return;
     const now = new Date();
-    const r = ranges(now, gran);
+    const key = +ranges(now, gran).cur[0];
+    const c = this._cache[gran];
+    if (c && c.key === key && Date.now() - c.at < CACHE_MS) return;
+    const r = ranges(hourFloor(now), gran);
     const cfg = this._cfg;
     const get = (rg) => (rg ? fetchHours(this._hass, cfg.energy_entity, rg[0], rg[1]) : Promise.resolve(null));
     this._loading[gran] = Promise.all([get(r.cur), get(r.prev), get(r.yoy)])
-      .then(([cur, prev, yoy]) => ({ at: Date.now(), now, cur, prev, yoy }))
-      .catch((e) => ({ at: Date.now(), now, error: e?.message || String(e) }))
+      .then(([cur, prev, yoy]) => ({ at: Date.now(), key, ...analyze(gran, now, cfg.price_lists, cur, prev, yoy) }))
+      .catch((e) => ({ at: Date.now(), key, error: e?.message || String(e) }))
       .then((res) => {
         this._loading[gran] = null;
-        if (cfg !== this._cfg) return; // config changed meanwhile
+        if (cfg !== this._cfg) return this._load(gran); // config changed meanwhile: load for the new one
         this._cache[gran] = res;
-        this._key = '';
-        this._render();
-        if (this._statsDlg.open) this._renderStats();
+        if (gran === this._gran) this._render();
+        if (this._statsDlg.open && gran === this._stats.gran) this._renderStats();
       });
   }
 
@@ -487,40 +524,36 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
 
   _render() {
     if (!this._cfg || !this._hass) return;
-    const html = this._head() + this._meterBox() + this._flow() + this._period();
-    if (html === this._key) return;
-    this._key = html;
-    this._card.innerHTML = html;
-  }
-
-  _head() {
-    const phases = this._cfg.phase_entities.map((id, i) => {
-      const w = this._num(id);
-      return `L${i + 1} ${w == null ? '–' : fmt(w, 0)} W`;
-    }).join(' · ');
-    const w = this._num(this._cfg.power_entity);
-    return `<div class="head"><span class="ico">${ICON.bolt}</span><div class="grow"><h2>Energie</h2>${phases ? `<div class="sub">${phases}</div>` : ''}</div>`
-      + `<div class="now"><b>${w == null ? '–' : fmt(w, 0)}</b> <span class="unit">W</span><small>spotřeba teď</small></div></div>`;
-  }
-
-  _meterBox() {
-    const reg = (id, label) => {
-      const v = this._num(id);
-      return `<div><div class="lbl">${label}</div><div class="reg">${v == null ? '–' : fmt(v, 1)} <small>kWh</small></div></div>`;
-    };
-    const regs = this._twoTariffs()
-      ? reg(this._cfg.meter_vt, 'Stav elektroměru · VT') + reg(this._cfg.meter_nt, 'NT')
-      : reg(this._cfg.meter_vt, 'Stav elektroměru');
-    return `<div class="meter">${ICON.meter}<div class="regs">${regs}</div><button class="btn2" data-act="meter">${ICON.pen}Elektroměr</button></div>`;
-  }
-
-  _flow() {
-    const w = this._num(this._cfg.power_entity);
-    const txt = w == null ? '–' : `${fmt(w, 0)} W`;
+    const phases = this._cfg.phase_entities.length ? '<div class="sub" data-live="phases"></div>' : '';
+    const reg = (key, label) => `<div><div class="lbl">${label}</div><div class="reg"><span data-live="${key}"></span> <small>kWh</small></div></div>`;
+    const regs = this._twoTariffs() ? reg('vt', 'Stav elektroměru · VT') + reg('nt', 'NT') : reg('vt', 'Stav elektroměru');
     const path = (cls) => `<path class="${cls}" vector-effect="non-scaling-stroke" stroke="#488fc2" d="M60 75 H340"></path>`;
-    return `<div class="flow"><svg viewBox="0 0 400 150" preserveAspectRatio="none" aria-hidden="true">${path('fb')}${w > 0 ? path('fl') : ''}</svg>`
-      + `<div class="pf" style="left:15%"><span>Síť</span><span class="c" style="border:3px solid #488fc2"><span style="color:#488fc2">${ICON.grid}</span><span style="color:#2b6a99">→ ${txt}</span></span></div>`
-      + `<div class="pf" style="left:85%"><span>Dům</span><span class="c" style="border:3px solid var(--ec-accent)">${ICON.house}<span>${txt}</span></span></div></div>`;
+    this._card.innerHTML = `<div class="head"><span class="ico">${ICON.bolt}</span><div class="grow"><h2>Energie</h2>${phases}</div>`
+      + '<div class="now"><b data-live="power"></b> <span class="unit">W</span><small>spotřeba teď</small></div></div>'
+      + `<div class="meter">${ICON.meter}<div class="regs">${regs}</div><button class="btn2" data-act="meter">${ICON.pen}Elektroměr</button></div>`
+      + `<div class="flow"><svg viewBox="0 0 400 150" preserveAspectRatio="none" aria-hidden="true">${path('fb')}${path('fl')}</svg>`
+      + `<div class="pf" style="left:15%"><span>Síť</span><span class="c" style="border:3px solid #488fc2"><span style="color:#488fc2">${ICON.grid}</span><span style="color:#2b6a99">→ <span data-live="flow"></span></span></span></div>`
+      + `<div class="pf" style="left:85%"><span>Dům</span><span class="c" style="border:3px solid var(--ec-accent)">${ICON.house}<span data-live="flow"></span></span></div></div>`
+      + this._period();
+    this._live();
+  }
+
+  // The values that change with every hass update.
+  _live() {
+    const w = this._num(this._cfg.power_entity);
+    const v = (x, d) => (x == null ? '–' : fmt(x, d));
+    const val = {
+      power: v(w, 0),
+      flow: w == null ? '–' : `${fmt(w, 0)} W`,
+      phases: this._cfg.phase_entities.map((id, i) => `L${i + 1} ${v(this._num(id), 0)} W`).join(' · '),
+      vt: v(this._num(this._cfg.meter_vt), 1),
+      nt: v(this._num(this._cfg.meter_nt), 1),
+    };
+    for (const el of this._card.querySelectorAll('[data-live]')) {
+      const t = val[el.dataset.live];
+      if (el.textContent !== t) el.textContent = t;
+    }
+    this._card.querySelector('.flow').classList.toggle('idle', !(w > 0));
   }
 
   _period() {
@@ -532,12 +565,8 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     if (!c || !c.cur) {
       body = `<div><div class="note${c?.error ? ' err' : ''}">${c?.error ? esc(c.error) : 'Načítám statistiky…'}</div><div class="big">– <small>kWh</small></div></div>`;
     } else {
-      const lists = this._cfg.price_lists;
-      const r = ranges(c.now, this._gran);
-      const n = names(c.now, this._gran);
-      const cur = summarize(c.cur, lists, ...r.cur);
-      const prev = summarize(c.prev, lists, ...r.prev);
-      const yoy = c.yoy && summarize(c.yoy, lists, ...r.yoy);
+      const { cur, prev, yoy } = c;
+      const n = names(c.end, this._gran);
       const d = this._gran === 'year' ? 0 : 1;
       const nt = this._twoTariffs() && cur.kwh > 0 ? Math.round((cur.ntKwh / cur.kwh) * 100) : null;
       // no consumption in the comparison period = no data yet: no chip (fixed fees alone would compare as +1000 %)
@@ -571,12 +600,13 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     const gran = s.gran;
     const kc = s.unit === 'kc';
     const cmp = gran === 'year' ? 'prev' : s.cmp;
-    const r = ranges(c.now, gran);
-    const nm = names(c.now, gran);
-    const n = gran === 'day' ? 24 : gran === 'month' ? daysIn(c.now.getFullYear(), c.now.getMonth()) : 12;
+    const { r, end } = c;
+    const nm = names(end, gran);
+    const last = new Date(Math.max(+r.cur[0], +end - 1)); // the last hour with data
+    const n = gran === 'day' ? 24 : gran === 'month' ? daysIn(end.getFullYear(), end.getMonth()) : 12;
     const val = (b) => (kc ? b.kc : b.kwh);
-    const cmpHours = cmp === 'yoy' ? c.yoy : c.prev;
-    const cur = buckets(c.cur, lists, gran, n).map(val);
+    const cmpHours = cmp === 'yoy' ? c.hours.yoy : c.hours.prev;
+    const cur = buckets(c.hours.cur, lists, gran, n).map(val);
     const prev = buckets(cmpHours, lists, gran, n).map(val);
     const prevName = cmp === 'yoy' ? nm.yoy : nm.prev;
     const u = kc ? 'Kč' : 'kWh';
@@ -584,25 +614,25 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     const sum = (a) => a.reduce((t, v) => t + v, 0);
     const curV = sum(cur), prevV = sum(prev);
     const p = pct(curV, prevV);
-    const elapsed = bucketIndex(gran, c.now) + 1;
+    const elapsed = end > r.cur[0] ? bucketIndex(gran, last) + 1 : 1;
     const max = Math.max(...cur, ...prev) || 1;
     const label = (i) => (gran === 'day' ? (i % 3 === 0 ? String(i) : '') : gran === 'month' ? ((i + 1) % 5 === 0 || i === 0 ? String(i + 1) : '') : MONTHS_SHORT[i]);
     const tip = (i) => (gran === 'day' ? `${i}:00` : gran === 'month' ? `${i + 1}.` : MONTHS_SHORT[i]);
     const bars = cur.map((v, i) => `<div title="${tip(i)}: ${i < elapsed ? fmt(v, 1) : '–'} / ${fmt(prev[i], 1)} ${u}"><i style="height:${(prev[i] / max) * 100}%"></i><i class="c" style="height:${(i < elapsed ? v / max : 0) * 100}%"></i></div>`).join('');
     const labels = cur.map((_, i) => `<span>${label(i)}</span>`).join('');
     const peak = cur.slice(0, elapsed).reduce((best, v, i) => (v > cur[best] ? i : best), 0);
-    const peakLabel = gran === 'day' ? `${peak}:00` : gran === 'month' ? `${peak + 1}. ${c.now.getMonth() + 1}.` : MONTHS_SHORT[peak];
-    const share = (c.now - r.cur[0]) / (periodEnd(gran, r.cur[0]) - r.cur[0]);
+    const peakLabel = gran === 'day' ? `${peak}:00` : gran === 'month' ? `${peak + 1}. ${end.getMonth() + 1}.` : MONTHS_SHORT[peak];
+    const share = (end - r.cur[0]) / (periodEnd(gran, r.cur[0]) - r.cur[0]);
     const kpis = [
       { l: gran === 'day' ? 'Ø za hodinu' : gran === 'year' ? 'Ø za měsíc' : 'Ø za den', v: `${fmt(curV / elapsed, 1)} ${u}` },
       { l: 'Špička', v: `${peakLabel} · ${fmt(cur[peak], 1)} ${u}` },
       { l: 'Rozdíl', v: `${curV > prevV ? '+' : ''}${fmt(curV - prevV, d)} ${u}` },
       kc
-        ? { l: 'Vč. stálých plateb', v: `≈ ${fmt(curV + fixedFor(lists, ...r.cur), 0)} Kč` }
+        ? { l: 'Vč. stálých plateb', v: `≈ ${fmt(curV + c.cur.fixed, 0)} Kč` }
         : { l: 'Odhad za celé období', v: `≈ ${fmt(share > 0 ? curV / share : 0, 0)} kWh` },
     ];
     const cmpPills = gran === 'year' ? '' : `<div class="pills" role="radiogroup" aria-label="Porovnat s">${[['prev', nm.prev], ['yoy', nm.yoy]].map(([id, l]) => `<button role="radio" aria-checked="${cmp === id}" data-act="scmp" data-val="${id}">vs ${esc(l)}</button>`).join('')}</div>`;
-    const unpriced = kc && (priceHours(c.cur, lists).unpriced || priceHours(cmpHours, lists).unpriced);
+    const unpriced = kc && (c.cur.unpriced || (cmp === 'yoy' ? c.yoy : c.prev).unpriced);
     this._statsDlg.innerHTML = `<div class="dlg">${head}${tabs}${cmpPills}`
       + `<div class="cmp"><div><div class="note">${esc(nm.cur)} · ${esc(nm.span)}</div><div class="v">${fmt(curV, d)} <span class="unit">${u}</span></div></div>`
       + `<div style="padding-bottom:4px"><div class="note">${esc(prevName)} · ${esc(nm.span)}</div><div class="p">${fmt(prevV, d)} ${u}</div></div><div class="sp"></div>`
@@ -630,8 +660,16 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     this._meterDlg.innerHTML = `<div class="dlg"><div class="dhead"><h3>Elektroměr</h3><button class="x" aria-label="Zavřít" data-act="close">${ICON.close}</button></div>`
       + `<div class="seg" role="tablist" aria-label="Akce">${tabs}</div>${form}<div class="prev">${this._meterPreview()}</div>`
       + `<div class="ok">${ICON.check}<span>Statistiky spotřeby se nezmění. Přírůstky se počítají jen ze Shelly, takže kalibrace ani výměna nevyrobí skok.</span></div>`
-      + `<button class="cta" data-act="save"></button><div class="hist"><div class="lbl" style="margin-bottom:6px">Historie</div>${this._history()}</div></div>`;
+      + `<button class="cta" data-act="save"></button><div class="hist"><div class="lbl" style="margin-bottom:6px">Historie</div><div class="hrows">${this._history()}</div></div></div>`;
     this._updateSaveBtn();
+  }
+
+  // While open: "Stav v HA teď" and the history follow hass (the form inputs stay untouched).
+  _refreshMeter() {
+    for (const [sel, html] of [['.prev', this._meterPreview()], ['.hrows', this._history()]]) {
+      const el = this._meterDlg.querySelector(sel);
+      if (el && el.innerHTML !== html) el.innerHTML = html;
+    }
   }
 
   _meterPreview() {
@@ -672,21 +710,24 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
   _updateSaveBtn() {
     const b = this.shadowRoot.querySelector('[data-act="save"]');
     const m = this._meter;
-    b.disabled = !this._meterData() || m.saved;
-    b.textContent = m.error || (m.saved ? 'Uloženo' : m.mode === 'align' ? 'Uložit stav' : 'Uložit výměnu');
+    b.disabled = !this._meterData() || m.saved || m.saving;
+    b.textContent = m.error || (m.saving ? 'Ukládám…' : m.saved ? 'Uloženo' : m.mode === 'align' ? 'Uložit stav' : 'Uložit výměnu');
   }
 
   async _save() {
-    const data = this._meterData();
-    if (!data) return;
     const m = this._meter;
+    const data = this._meterData();
+    if (!data || m.saving) return;
+    m.saving = true; // one call per click: the button is disabled until the script answers
+    this._updateSaveBtn();
     try {
       await this._hass.callService('script', this._cfg.meter_script.replace(/^script\./, ''), data);
       m.saved = true;
     } catch (e) {
       m.error = `Chyba: ${e?.message || e}`;
     }
-    if (this._meter === m) this._updateSaveBtn();
+    m.saving = false;
+    if (this._meter === m) { this._updateSaveBtn(); this._refreshMeter(); }
   }
 
   _history() {

@@ -33,6 +33,7 @@
     return +((0.22 + 0.55 * Math.exp(-((h - 7) ** 2) / 3) + 0.9 * Math.exp(-((h - 19) ** 2) / 5)) * season * noise).toFixed(3);
   };
   const ws = [];
+  let wsDelay = 0, svcDelay = 0;
   const calls = [];
   const states = {
     'sensor.total_power': { state: '1460' },
@@ -48,13 +49,14 @@
     states,
     callWS: async (msg) => {
       ws.push(msg);
+      if (wsDelay) await new Promise((r) => setTimeout(r, wsDelay));
       const out = [];
       const end = Date.parse(msg.end_time);
       // hourly rows exist for finished hours only
       for (let t = Math.ceil(Date.parse(msg.start_time) / 3.6e6) * 3.6e6; t + 3.6e6 <= end; t += 3.6e6) out.push({ start: t, end: t + 3.6e6, change: kwhAt(t) });
       return { [msg.statistic_ids[0]]: out };
     },
-    callService: async (domain, service, data) => { calls.push({ domain, service, data }); },
+    callService: async (domain, service, data) => { calls.push({ domain, service, data }); if (svcDelay) await new Promise((r) => setTimeout(r, svcDelay)); },
   };
 
   const card = document.createElement('energy-card');
@@ -80,14 +82,40 @@
   if (shot) { document.getElementById('out').remove(); throw 'shot'; }
 
   const r = {};
-  r.statsQuery = ws[0]?.type === 'recorder/statistics_during_period' && ws[0].period === 'hour' && ws[0].types[0] === 'change' && ws.length === 3;
+  r.statsQuery = ws[0]?.type === 'recorder/statistics_during_period' && ws[0].period === 'hour' && ws[0].types[0] === 'change' && ws[0].units?.energy === 'kWh' && ws.length === 3;
   r.header = $('.sub').textContent === 'L1 412 W · L2 690 W · L3 358 W' && $('.now b').textContent.replace(/\s/g, ' ') === '1 460';
   r.twoRegisters = root.querySelectorAll('.meter .reg').length === 2 && $('.meter .reg').textContent.replace(/\s/g, ' ').startsWith('31 204,4');
   r.monthDefault = $('[data-act="gran"][aria-selected="true"]').dataset.val === 'month';
   r.kwhShown = !$('.big').textContent.startsWith('–') && /≈ [\d\s]+ Kč/.test($('.kc b').textContent);
   r.fourChips = root.querySelectorAll('.chips .chip').length === 4;
   r.ntLine = /^NT \d+ % · VT \d+ %$/.test([...root.querySelectorAll('.sum .note')].map((n) => n.textContent).find((t) => t.startsWith('NT')) || '');
-  r.flowAnimated = !!$('.flow .fl');
+  r.flowAnimated = !!$('.flow .fl') && !$('.flow').classList.contains('idle');
+
+  // hass updates patch the live values only: same nodes, focus kept, no new statistics call while fresh
+  const flowPath = $('.flow .fl');
+  const tab = $('[data-act="gran"][data-val="month"]');
+  tab.focus();
+  let n0 = ws.length;
+  card.hass = { ...hass, states: { ...states, 'sensor.total_power': { state: '0' }, 'sensor.phase_a': { state: '7' } } }; await tick();
+  r.livePatch = flowPath === $('.flow .fl') && root.activeElement === tab && $('.now b').textContent === '0'
+    && $('.sub').textContent.startsWith('L1 7 W') && $('.flow').classList.contains('idle') && ws.length === n0;
+  card.hass = hass; await tick();
+
+  // a wall tablet: hass updates reload once the cache is stale, and when the range start moved (midnight)
+  card._cache.month.at = 0;
+  card.hass = { ...hass }; await tick(200);
+  r.refreshStale = ws.length === n0 + 3;
+  n0 = ws.length;
+  card._cache.month.key = 0; // as if loaded yesterday / last month
+  card.hass = { ...hass }; await tick(200);
+  r.refreshRollover = ws.length === n0 + 3;
+
+  // setConfig during an in-flight load: the card still ends up with data
+  wsDelay = 300;
+  card._cache = {}; card.hass = { ...hass }; await tick(20);
+  card.setConfig({ ...card._cfg, accent: '#ef6c00' }); await tick(1200);
+  r.raceLoaded = !$('.big').textContent.startsWith('–') && !card._loading.month;
+  wsDelay = 0;
 
   // Rok: one comparison (vs last year), kWh and Kč
   click('[data-act="gran"][data-val="year"]'); await tick(200);
@@ -134,6 +162,27 @@
   click('[data-act="save"]'); await tick();
   const d = calls[1]?.data || {};
   r.replaceCall = d.kind === 'replace' && d.vt === 0 && d.nt === 0 && d.old_vt === 31211 && !('old_nt' in d) && /^\d{4}-\d{2}-\d{2}$/.test(d.date);
+  md.close();
+
+  // Double submit: the button is disabled while the script runs, one call only
+  click('[data-act="meter"]'); await tick();
+  type('#m_vt', '31 300'); type('#m_nt', '17 200');
+  svcDelay = 300;
+  const nCalls = calls.length;
+  click('[data-act="save"]'); click('[data-act="save"]'); await tick(10);
+  r.saveBusy = $('[data-act="save"]').disabled && $('[data-act="save"]').textContent === 'Ukládám…';
+  await tick(400);
+  r.singleSave = calls.length === nCalls + 1 && $('[data-act="save"]').textContent === 'Uloženo';
+  svcDelay = 0;
+
+  // The open meter pop-up follows hass: registers and history (the script added an entry)
+  const hist = states['sensor.hfb_energy_meter_history'];
+  card.hass = { ...hass, states: { ...states, 'sensor.hfb_energy_meter_vt': { state: '31300' },
+    'sensor.hfb_energy_meter_history': { ...hist, attributes: { entries: [...hist.attributes.entries, { time: '2026-11-01T12:00:00+01:00', kind: 'align', vt: 31300, nt: 17200 }] } } } };
+  await tick();
+  r.meterFollowsHass = md.querySelector('.hrows .row span').textContent === '1. 11. 2026' && md.querySelector('.prev').textContent.replace(/\s/g, ' ').includes('31 300,0 kWh')
+    && md.querySelector('#m_vt').value === '31 300';
+  card.hass = hass;
   md.close();
 
   // Re-render on hass updates keeps the open meter form

@@ -90,7 +90,8 @@ price_lists:
 
 ## How Kč are computed
 
-- Hourly consumption comes from `recorder/statistics_during_period` (`period: hour`, `change`) of `energy_entity`, never from the meter registers, so a calibration or meter replacement never shows up as consumption. Statistics are cached for 5 minutes and reloaded when the page becomes visible again.
+- Hourly consumption comes from `recorder/statistics_during_period` (`period: hour`, `change`, in kWh) of `energy_entity`, never from the meter registers, so a calibration or meter replacement never shows up as consumption. Statistics are cached for 5 minutes, reloaded after that on the next state update (a wall tablet keeps up), at midnight for Den, and when the page becomes visible again.
+- Comparisons cover the same complete hours: HA writes an hourly row after the hour ends, so the current period ends with its last row (e.g. "do 14:00") and the previous period and last year are cut at the same offset.
 - Each hour is priced by the list valid that day. An hour an NT window cuts is split by minutes: `kWh × (NT × share + VT × (1 − share) + POZE)`.
 - Fixed fees are added pro rata: `fixed / days in the month` for every (part of a) day in the period, by the list valid that day.
 - Hours with no valid price list count in kWh but not in Kč; the card then notes "část období bez ceníku".
@@ -99,6 +100,10 @@ price_lists:
 ### VT / NT and public holidays
 
 Weekends and Czech public holidays use the `weekend_holiday` windows: 1. 1., Good Friday, Easter Monday, 1. 5., 8. 5., 5. 7., 6. 7., 28. 9., 28. 10., 17. 11., 24.–26. 12. Easter is computed (anonymous Gregorian algorithm).
+
+### Limitations
+
+- Days, hours, NT windows and holidays use the **browser's timezone**. Set the device (wall tablet, phone) to the Home Assistant timezone, otherwise hours are split by the wrong clock.
 
 ### Fixing an old negative statistic
 
