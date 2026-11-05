@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
@@ -636,7 +636,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     this._statsDlg.innerHTML = `<div class="dlg">${head}${tabs}${cmpPills}`
       + `<div class="cmp"><div><div class="note">${esc(nm.cur)} · ${esc(nm.span)}</div><div class="v">${fmt(curV, d)} <span class="unit">${u}</span></div></div>`
       + `<div style="padding-bottom:4px"><div class="note">${esc(prevName)} · ${esc(nm.span)}</div><div class="p">${fmt(prevV, d)} ${u}</div></div><div class="sp"></div>`
-      + (p == null ? '' : `<span class="chip ${p > 0 ? 'up' : 'down'}" style="margin-bottom:6px;font-size:13px">${p > 0 ? '▲ +' : '▼ '}${fmt(p, 1)} %</span>`) + '</div>'
+      + (p == null ? '' : `<span class="chip ${p > 0 ? 'up' : 'down'}" style="margin-bottom:6px;font-size:13px">${p > 0 ? '▲ +' : '▼ '}${fmt(p, 1)} % (${curV > prevV ? '+' : ''}${fmt(curV - prevV, d)} ${u})</span>`) + '</div>'
       + `<div><div class="bars">${bars}</div><div class="blab">${labels}</div></div>`
       + `<div class="legend"><span><i class="c"></i>${esc(nm.cur)}</span><span><i></i>${esc(prevName)}</span></div>`
       + `<div class="kpis">${kpis.map((k) => `<div><span class="lbl">${k.l}</span><b>${k.v}</b></div>`).join('')}</div>`
