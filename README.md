@@ -18,7 +18,9 @@ A Home Assistant card for household electricity: how much was used and what it c
 
 ## Installation
 
-The card is not in HACS. Copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
+**HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/energy-card`, type **Dashboard** → download **Energy Card** → reload the browser.
+
+**Manual:** copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
 
 Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.1.0`, type **JavaScript module** → reload the browser.
 
