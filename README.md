@@ -22,9 +22,9 @@ A Home Assistant card for household electricity: how much was used and what it c
 
 **Manual:** copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
 
-Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.1.1`, type **JavaScript module** → reload the browser.
+Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.1.2`, type **JavaScript module** → reload the browser.
 
-After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.1.1`), otherwise browsers keep the old file.
+After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.1.2`), otherwise browsers keep the old file.
 
 ## Configuration
 
