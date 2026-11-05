@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeConfig, easterSunday, czechHolidays, dayType, listFor, ntMinutes, priceHours, fixedFor, ranges, names, buckets, pct, parseNum, fmt, toDay, analyze, dataEnd, fetchHours,
+  normalizeConfig, easterSunday, czechHolidays, dayType, listFor, ntMinutes, priceHours, fixedFor, ranges, names, buckets, pct, parseNum, fmt, toDay, analyze, dataEnd, fetchHours, anchor,
 } from '../dist/energy-card.js';
 
 // The current contract (spec, Facts): ČEZ D25d, incl. VAT.
@@ -196,6 +196,31 @@ test('dataEnd: never past the current full hour, never before the start', () => 
   const start = at(2026, 11, 10);
   assert.equal(+dataEnd([{ start: at(2026, 11, 10, 14) }], start, at(2026, 11, 10, 14, 30)), +at(2026, 11, 10, 14));
   assert.equal(+dataEnd([], start, at(2026, 11, 10, 9)), +start);
+});
+
+test('anchor and past periods: whole period, last hour included', () => {
+  const now = at(2026, 11, 5, 14, 20);
+  assert.equal(anchor(now, 'day', 0), now);
+  assert.equal(+anchor(now, 'day', -1), +at(2026, 11, 5) - 1);
+  assert.equal(+anchor(now, 'month', -1), +at(2026, 11, 1) - 1);
+  assert.equal(+anchor(now, 'month', -12), +at(2025, 12, 1) - 1);
+  assert.equal(+anchor(now, 'year', -1), +at(2026, 1, 1) - 1);
+  // a complete past day: 24 rows on each side, the 23:00 row counted
+  const a = anchor(now, 'day', -1);
+  const p = analyze('day', a, [SINGLE], rows(at(2026, 11, 4), at(2026, 11, 5)), rows(at(2026, 11, 3), at(2026, 11, 4)), null);
+  assert.equal(p.cur.kwh, 24);
+  assert.equal(p.prev.kwh, 24);
+  assert.equal(+p.end, +a);
+  const n = names(a, 'day', true);
+  assert.deepEqual([n.cur, n.prev, n.span], ['4. 11. 2026', '3. 11. 2026', 'celý den']);
+  assert.equal(names(anchor(now, 'month', -1), 'month', true).cur, 'Říjen 2026');
+  // a past 30-day month against the whole 31-day one before it
+  const sep = ranges(anchor(now, 'month', -2), 'month');
+  assert.equal(+sep.prev[1], +at(2026, 9, 1) - 1);
+  // statistics end at 18:00 on a past day: like-for-like up to there, not 'celý den'
+  const cut = analyze('day', a, [SINGLE], rows(at(2026, 11, 4), at(2026, 11, 4, 18)), rows(at(2026, 11, 3), at(2026, 11, 4)), null);
+  assert.equal(cut.prev.kwh, 18);
+  assert.equal(names(cut.end, 'day', true).span, 'do 18:00');
 });
 
 test('fetchHours: hourly change in kWh', async () => {
