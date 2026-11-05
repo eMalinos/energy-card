@@ -78,6 +78,7 @@
 
   const shot = new URLSearchParams(location.search).get('shot');
   if (shot === 'stats') { click('[data-act="stats"]'); await tick(200); }
+  if (shot === 'statsPast') { click('[data-act="stats"]'); await tick(200); click('[data-act="snav"][data-val="-1"]'); await tick(300); }
   if (shot === 'meter') { click('[data-act="meter"]'); type('#m_vt', '31 210,5'); type('#m_nt', '17 109'); await tick(); }
   if (shot) { document.getElementById('out').remove(); throw 'shot'; }
 
@@ -87,7 +88,7 @@
   r.twoRegisters = root.querySelectorAll('.meter .reg').length === 2 && $('.meter .reg').textContent.replace(/\s/g, ' ').startsWith('31 204,4');
   r.monthDefault = $('[data-act="gran"][aria-selected="true"]').dataset.val === 'month';
   r.kwhShown = !$('.big').textContent.startsWith('–') && /≈ [\d\s]+ Kč/.test($('.kc b').textContent);
-  r.fourChips = root.querySelectorAll('.chips .chip').length === 4;
+  r.fourChips = root.querySelectorAll('.chips .chip').length === 4 && /% \([+-]?[\d\s,]+ kWh\) vs/.test($('.chips .chip').textContent);
   r.ntLine = /^NT \d+ % · VT \d+ %$/.test([...root.querySelectorAll('.sum .note')].map((n) => n.textContent).find((t) => t.startsWith('NT')) || '');
   r.flowAnimated = !!$('.flow .fl') && !$('.flow').classList.contains('idle');
 
@@ -141,6 +142,15 @@
   r.statsYear = dlg.querySelectorAll('.bars > div').length === 12 && !dlg.querySelector('.pills');
   click('[data-act="sgran"][data-val="day"]'); await tick(200);
   r.statsDay = dlg.querySelectorAll('.bars > div').length === 24;
+  // history: back one day, Dnes returns; the next arrow is off on the current period
+  r.navNextOff = dlg.querySelector('[data-act="snav"][data-val="1"]').disabled && !dlg.querySelector('[data-act="snav"][data-val="0"]');
+  click('[data-act="snav"][data-val="-1"]'); await tick(200);
+  const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  r.navBack = dlg.querySelector('.nav b').textContent === `${y.getDate()}. ${y.getMonth() + 1}. ${y.getFullYear()}`
+    && !!card._cache['day-1']?.cur && !dlg.querySelector('[data-act="snav"][data-val="1"]').disabled
+    && dlg.querySelectorAll('.bars > div').length === 24;
+  click('[data-act="snav"][data-val="0"]'); await tick();
+  r.navToday = dlg.querySelector('.nav b').textContent === 'Dnes' && !dlg.querySelector('[data-act="snav"][data-val="0"]');
   dlg.querySelector('[data-act="close"]').click(); await tick();
   r.statsClosed = !dlg.open;
 

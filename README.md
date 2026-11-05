@@ -12,7 +12,7 @@ A Home Assistant card for household electricity: how much was used and what it c
 - **Meter reading**: the VT and NT registers (one value with a single-tariff price list), with an **Elektroměr** button for calibration and meter replacement.
 - **Flow**: grid → house with the current power (the animation stops with the system's reduce-motion setting).
 - **Den / Měsíc / Rok**: kWh, cost ≈ Kč incl. VAT and fixed fees, the NT / VT share, and changes vs the previous period and vs last year, in kWh and in Kč. Comparisons are like-for-like: this month 1.–today against last month 1.–the same day and time.
-- **Statistiky**: bars per hour / day / month against the previous period or last year, in kWh or Kč, average, peak, difference and an estimate for the whole period.
+- **Statistiky**: bars per hour / day / month against the previous period or last year, in kWh or Kč, average, peak, difference and an estimate for the whole period; arrows browse back by day / month / year (a past period compares whole periods), **Dnes** returns to the current one.
 - **Elektroměr**: align the registers with the physical meter, or record a new meter (date, old meter's final values, new meter's start values); history of both.
 - Follows your theme's card background and text colours.
 
@@ -22,9 +22,9 @@ A Home Assistant card for household electricity: how much was used and what it c
 
 **Manual:** copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
 
-Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.1.2`, type **JavaScript module** → reload the browser.
+Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.2.0`, type **JavaScript module** → reload the browser.
 
-After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.1.2`), otherwise browsers keep the old file.
+After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.2.0`), otherwise browsers keep the old file.
 
 ## Configuration
 
@@ -121,7 +121,7 @@ python3 -m http.server 8765 &
 "Google Chrome" --headless=new --virtual-time-budget=5000 --dump-dom http://localhost:8765/tests/dom.html | grep RESULT
 ```
 
-`tests/dom.html?shot=card|stats|meter` renders the card with a fake `hass` for screenshots.
+`tests/dom.html?shot=card|stats|statsPast|meter` renders the card with a fake `hass` for screenshots.
 
 ## License
 

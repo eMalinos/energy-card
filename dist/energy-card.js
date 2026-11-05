@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.1.2';
+const VERSION = '0.2.0';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
@@ -143,7 +143,17 @@ export function fixedFor(lists, from, to) {
 }
 
 // Like-for-like ranges: the comparison period up to the same offset (day clamped to the month's last day).
+// At a period's last millisecond (a whole past period, see anchor()) the comparisons are whole too.
 export function ranges(now, gran) {
+  const r = likeRanges(now, gran);
+  if (!complete(now, gran)) return r;
+  const whole = (rg) => rg && [rg[0], new Date(+periodEnd(gran, rg[0]) - 1)];
+  return { cur: r.cur, prev: whole(r.prev), yoy: whole(r.yoy) };
+}
+
+const complete = (now, gran) => +now + 1 === +periodEnd(gran, likeRanges(now, gran).cur[0]);
+
+function likeRanges(now, gran) {
   const Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
   const at = (y, m, d) => new Date(y, m, Math.min(d, daysIn(y, m)), now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
   const day0 = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
@@ -181,16 +191,26 @@ const HOUR_MS = 3600000;
 export const hourFloor = (d) => new Date(Math.floor(+d / HOUR_MS) * HOUR_MS);
 
 // Where the current range's data ends: the end of its last hourly row (statistics lag behind
-// `now`), never past the current full hour and never before the range start.
+// `now`), never past the current full hour and never before the range start. (+1 ms: a past
+// period is anchored at its last millisecond, see anchor(), and its last hour is complete.)
 export function dataEnd(curHours, start, now) {
   const last = curHours.reduce((m, h) => Math.max(m, +h.start + HOUR_MS), +start);
-  return new Date(Math.max(+start, Math.min(last, +hourFloor(now))));
+  return new Date(Math.max(+start, Math.min(last, +hourFloor(new Date(+now + 1)))));
+}
+
+// `now` for the period `offset` periods back (0 = the current one): the past one's last millisecond.
+export function anchor(now, gran, offset) {
+  if (!offset) return now;
+  const s = ranges(now, gran).cur[0];
+  const start = gran === 'day' ? new Date(s.getFullYear(), s.getMonth(), s.getDate() + offset)
+    : gran === 'month' ? new Date(s.getFullYear(), s.getMonth() + offset, 1) : new Date(s.getFullYear() + offset, 0, 1);
+  return new Date(+periodEnd(gran, start) - 1);
 }
 
 // Like-for-like over complete hours: cut every range at the offset where the current data ends,
 // then sum each. `cur`, `prev`, `yoy` = hours fetched for ranges(hourFloor(now), gran).
 export function analyze(gran, now, lists, cur, prev, yoy) {
-  const end = dataEnd(cur, ranges(now, gran).cur[0], now);
+  const end = new Date(Math.min(+dataEnd(cur, ranges(now, gran).cur[0], now), +now));
   const r = ranges(end, gran);
   const cut = (hs, rg) => (hs && rg ? hs.filter((h) => h.start >= rg[0] && h.start < rg[1]) : null);
   const hours = { cur: cut(cur, r.cur), prev: cut(prev, r.prev), yoy: cut(yoy, r.yoy) };
@@ -220,9 +240,14 @@ export function pct(cur, prev) {
 }
 
 // Period names: card range label, stats names and span, chip labels.
-export function names(now, gran) {
+export function names(now, gran, past = false) {
   const Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
   const r = ranges(now, gran);
+  if (past) { // statistics may end early in a past period: then it is like-for-like up to there
+    const n = names(now, gran);
+    const span = complete(now, gran) ? { day: 'celý den', month: 'celý měsíc', year: 'celý rok' }[gran] : n.span;
+    return gran === 'day' ? { ...n, cur: czDate(now), prev: czDate(r.prev[0]), span } : { ...n, span };
+  }
   if (gran === 'day') {
     const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const yoy = czDate(r.yoy[0]);
@@ -266,6 +291,8 @@ const ICON = {
   house: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"></path></svg>',
   stats: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"></path></svg>',
   check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>',
+  prev: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>',
+  next: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>',
   close: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>',
 };
 
@@ -322,6 +349,9 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .dhead{display:flex;align-items:center;gap:10px}
 .dhead h3{margin:0;flex:1;font-size:18px;font-weight:500}
 .x{width:44px;height:44px;border:0;border-radius:12px;background:transparent;display:flex;align-items:center;justify-content:center}
+.nav{display:flex;align-items:center;gap:8px;margin:-6px 0}
+.nav b{flex:1;text-align:center;font-size:15px;font-weight:500}
+.x:disabled{opacity:.3;cursor:default}
 .pills{display:flex;gap:8px;flex-wrap:wrap}
 .pills button{height:36px;padding:0 14px;border-radius:18px;font-size:13px;font-weight:500;border:1px solid var(--ec-line);background:var(--ec-bg)}
 .pills button[aria-checked="true"]{background:var(--ec-text);border-color:var(--ec-text);color:var(--ec-bg)}
@@ -358,7 +388,12 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .err{color:var(--error-color,#db4437)}
 `;
 
-const chipHtml = (p, unit, label) => (p == null ? '' : `<span class="chip ${p > 0 ? 'up' : 'down'}">${p > 0 ? '▲ +' : '▼ '}${fmt(p, 1)} % ${unit} ${esc(label)}</span>`);
+const diff = (cur, prev, d, unit) => `${cur > prev ? '+' : ''}${fmt(cur - prev, d)} ${unit}`;
+const chipHtml = (cur, prev, d, unit, label) => {
+  const p = pct(cur, prev);
+  return p == null ? '' : `<span class="chip ${p > 0 ? 'up' : 'down'}">${p > 0 ? '▲ +' : '▼ '}${fmt(p, 1)} % (${diff(cur, prev, d, unit)}) ${esc(label)}</span>`;
+};
+const cacheKey = (gran, offset) => (offset ? `${gran}${offset}` : gran);
 
 class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
   constructor() {
@@ -366,7 +401,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     this._gran = 'month';
     this._cache = {}; // gran -> {at, now, cur, prev, yoy} (hours) or {at, now, error}
     this._loading = {};
-    this._stats = { gran: 'month', cmp: 'prev', unit: 'kwh' };
+    this._stats = { gran: 'month', cmp: 'prev', unit: 'kwh', offset: 0 };
     this._meter = null; // meter pop-up form while open
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><div class="card"></div><dialog class="stats" aria-label="Statistiky energie"></dialog><dialog class="meterdlg" aria-label="Elektroměr"></dialog>`;
@@ -383,7 +418,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
       if (document.visibilityState !== 'visible') return;
       for (const c of Object.values(this._cache)) c.at = 0;
       this._load(this._gran);
-      if (this._statsDlg.open) this._load(this._stats.gran);
+      if (this._statsDlg.open) this._load(this._stats.gran, this._stats.offset);
     };
   }
 
@@ -410,7 +445,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     if (this._card.firstChild) this._live(); else this._render();
     if (this._meter && this._meterDlg.open) this._refreshMeter();
     this._load(this._gran);
-    if (this._statsDlg.open) this._load(this._stats.gran);
+    if (this._statsDlg.open) this._load(this._stats.gran, this._stats.offset);
   }
 
   getCardSize() {
@@ -430,26 +465,28 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     document.removeEventListener('visibilitychange', this._onVisibility);
   }
 
-  // Hours of the ranges of `gran` with their summaries, cached for 5 minutes and per range start
-  // (Den rolls over at midnight).
-  _load(gran) {
-    if (!this._hass || !this._cfg || this._loading[gran]) return;
-    const now = new Date();
+  // Hours of the ranges of `gran` (`offset` periods back) with their summaries, cached for 5 minutes
+  // and per range start (Den rolls over at midnight).
+  _load(gran, offset = 0) {
+    const ck = cacheKey(gran, offset);
+    if (!this._hass || !this._cfg || this._loading[ck]) return;
+    const now = anchor(new Date(), gran, offset);
     const key = +ranges(now, gran).cur[0];
-    const c = this._cache[gran];
-    if (c && c.key === key && Date.now() - c.at < CACHE_MS) return;
-    const r = ranges(hourFloor(now), gran);
+    const c = this._cache[ck];
+    if (c && c.key === key && ((offset && !c.error) || Date.now() - c.at < CACHE_MS)) return;
+    const r = ranges(offset ? now : hourFloor(now), gran);
     const cfg = this._cfg;
-    const get = (rg) => (rg ? fetchHours(this._hass, cfg.energy_entity, rg[0], rg[1]) : Promise.resolve(null));
-    this._loading[gran] = Promise.all([get(r.cur), get(r.prev), get(r.yoy)])
+    // a past range ends at its last millisecond: fetch up to the full hour so its last row comes too
+    const get = (rg) => (rg ? fetchHours(this._hass, cfg.energy_entity, rg[0], new Date(+rg[1] + (offset ? 1 : 0))) : Promise.resolve(null));
+    this._loading[ck] = Promise.all([get(r.cur), get(r.prev), get(r.yoy)])
       .then(([cur, prev, yoy]) => ({ at: Date.now(), key, ...analyze(gran, now, cfg.price_lists, cur, prev, yoy) }))
       .catch((e) => ({ at: Date.now(), key, error: e?.message || String(e) }))
       .then((res) => {
-        this._loading[gran] = null;
-        if (cfg !== this._cfg) return this._load(gran); // config changed meanwhile: load for the new one
-        this._cache[gran] = res;
-        if (gran === this._gran) this._render();
-        if (this._statsDlg.open && gran === this._stats.gran) this._renderStats();
+        this._loading[ck] = null;
+        if (cfg !== this._cfg) return this._load(gran, offset); // config changed meanwhile: load for the new one
+        this._cache[ck] = res;
+        if (!offset && gran === this._gran) this._render();
+        if (this._statsDlg.open && gran === this._stats.gran && offset === this._stats.offset) this._renderStats();
       });
   }
 
@@ -473,16 +510,26 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
         this._load(v);
         break;
       case 'stats':
-        this._stats = { gran: this._gran, cmp: 'prev', unit: 'kwh' };
+        this._stats = { gran: this._gran, cmp: 'prev', unit: 'kwh', offset: 0 };
         this._renderStats();
         this._statsDlg.showModal();
         this._load(this._gran);
         break;
       case 'sgran':
         this._stats.gran = v;
+        this._stats.offset = 0;
         this._renderStats();
         this._load(v);
         break;
+      case 'snav': { // older / newer period, 0 = Dnes; past results kept for the viewed one only
+        const s = this._stats;
+        s.offset = v === '0' ? 0 : Math.min(0, s.offset + Number(v));
+        const keep = cacheKey(s.gran, s.offset);
+        for (const k of Object.keys(this._cache)) if (!GRANS[k] && k !== keep) delete this._cache[k];
+        this._renderStats();
+        this._load(s.gran, s.offset);
+        break;
+      }
       case 'scmp':
         this._stats.cmp = v;
         this._renderStats();
@@ -570,7 +617,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
       const d = this._gran === 'year' ? 0 : 1;
       const nt = this._twoTariffs() && cur.kwh > 0 ? Math.round((cur.ntKwh / cur.kwh) * 100) : null;
       // no consumption in the comparison period = no data yet: no chip (fixed fees alone would compare as +1000 %)
-      const both = (o, label) => (o && o.kwh > 0 ? chipHtml(pct(cur.kwh, o.kwh), 'kWh', label) + chipHtml(pct(cur.total, o.total), 'Kč', label) : '');
+      const both = (o, label) => (o && o.kwh > 0 ? chipHtml(cur.kwh, o.kwh, d, 'kWh', label) + chipHtml(cur.total, o.total, 0, 'Kč', label) : '');
       const chips = both(prev, n.chipPrev) + both(yoy, n.chipYoy);
       body = `<div><div class="note">${esc(n.range)}</div><div class="big">${fmt(cur.kwh, d)} <small>kWh</small></div>`
         + `<div class="kc"><b>≈ ${fmt(cur.total, 0)} Kč</b><span class="note">vč. DPH a stálých plateb ${fmt(cur.fixed, 0)} Kč</span></div>`
@@ -587,13 +634,22 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
 
   _renderStats() {
     const s = this._stats;
-    const head = `<div class="dhead"><h3>Statistiky energie</h3><div class="seg units" role="radiogroup" aria-label="Jednotky">`
+    const past = s.offset < 0;
+    const today = past ? `<button class="btn2" data-act="snav" data-val="0">Dnes</button>` : '';
+    const head = `<div class="dhead"><h3>Statistiky energie</h3>${today}<div class="seg units" role="radiogroup" aria-label="Jednotky">`
       + [['kwh', 'kWh'], ['kc', 'Kč']].map(([id, l]) => `<button role="radio" aria-checked="${s.unit === id}" data-act="sunit" data-val="${id}">${l}</button>`).join('')
       + `</div><button class="x" aria-label="Zavřít" data-act="close">${ICON.close}</button></div>`;
-    const tabs = `<div class="seg" role="tablist" aria-label="Období">${Object.entries(GRANS).map(([id, l]) => `<button role="tab" aria-selected="${s.gran === id}" data-act="sgran" data-val="${id}">${l}</button>`).join('')}</div>`;
-    const c = this._cache[s.gran];
+    const nav = `<div class="nav"><button class="x" aria-label="Předchozí" data-act="snav" data-val="-1">${ICON.prev}</button>`
+      + `<b>${esc(names(anchor(new Date(), s.gran, s.offset), s.gran, past).cur)}</b>`
+      + `<button class="x" aria-label="Další" data-act="snav" data-val="1"${past ? '' : ' disabled'}>${ICON.next}</button></div>`;
+    const tabs = `<div class="seg" role="tablist" aria-label="Období">${Object.entries(GRANS).map(([id, l]) => `<button role="tab" aria-selected="${s.gran === id}" data-act="sgran" data-val="${id}">${l}</button>`).join('')}</div>${nav}`;
+    const c = this._cache[cacheKey(s.gran, s.offset)];
     if (!c || !c.cur) {
       this._statsDlg.innerHTML = `<div class="dlg">${head}${tabs}<div class="note${c?.error ? ' err' : ''}">${c?.error ? esc(c.error) : 'Načítám statistiky…'}</div></div>`;
+      return;
+    }
+    if (past && !c.hours.cur.length) {
+      this._statsDlg.innerHTML = `<div class="dlg">${head}${tabs}<div class="note">Za toto období nejsou statistiky.</div></div>`;
       return;
     }
     const lists = this._cfg.price_lists;
@@ -601,7 +657,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     const kc = s.unit === 'kc';
     const cmp = gran === 'year' ? 'prev' : s.cmp;
     const { r, end } = c;
-    const nm = names(end, gran);
+    const nm = names(end, gran, past);
     const last = new Date(Math.max(+r.cur[0], +end - 1)); // the last hour with data
     const n = gran === 'day' ? 24 : gran === 'month' ? daysIn(end.getFullYear(), end.getMonth()) : 12;
     const val = (b) => (kc ? b.kc : b.kwh);
@@ -626,17 +682,17 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
     const kpis = [
       { l: gran === 'day' ? 'Ø za hodinu' : gran === 'year' ? 'Ø za měsíc' : 'Ø za den', v: `${fmt(curV / elapsed, 1)} ${u}` },
       { l: 'Špička', v: `${peakLabel} · ${fmt(cur[peak], 1)} ${u}` },
-      { l: 'Rozdíl', v: `${curV > prevV ? '+' : ''}${fmt(curV - prevV, d)} ${u}` },
+      { l: 'Rozdíl', v: diff(curV, prevV, d, u) },
       kc
         ? { l: 'Vč. stálých plateb', v: `≈ ${fmt(curV + c.cur.fixed, 0)} Kč` }
-        : { l: 'Odhad za celé období', v: `≈ ${fmt(share > 0 ? curV / share : 0, 0)} kWh` },
+        : { l: past ? 'Vč. stálých plateb' : 'Odhad za celé období', v: past ? `≈ ${fmt(c.cur.total, 0)} Kč` : `≈ ${fmt(share > 0 ? curV / share : 0, 0)} kWh` },
     ];
     const cmpPills = gran === 'year' ? '' : `<div class="pills" role="radiogroup" aria-label="Porovnat s">${[['prev', nm.prev], ['yoy', nm.yoy]].map(([id, l]) => `<button role="radio" aria-checked="${cmp === id}" data-act="scmp" data-val="${id}">vs ${esc(l)}</button>`).join('')}</div>`;
     const unpriced = kc && (c.cur.unpriced || (cmp === 'yoy' ? c.yoy : c.prev).unpriced);
     this._statsDlg.innerHTML = `<div class="dlg">${head}${tabs}${cmpPills}`
       + `<div class="cmp"><div><div class="note">${esc(nm.cur)} · ${esc(nm.span)}</div><div class="v">${fmt(curV, d)} <span class="unit">${u}</span></div></div>`
       + `<div style="padding-bottom:4px"><div class="note">${esc(prevName)} · ${esc(nm.span)}</div><div class="p">${fmt(prevV, d)} ${u}</div></div><div class="sp"></div>`
-      + (p == null ? '' : `<span class="chip ${p > 0 ? 'up' : 'down'}" style="margin-bottom:6px;font-size:13px">${p > 0 ? '▲ +' : '▼ '}${fmt(p, 1)} % (${curV > prevV ? '+' : ''}${fmt(curV - prevV, d)} ${u})</span>`) + '</div>'
+      + (p == null ? '' : `<span class="chip ${p > 0 ? 'up' : 'down'}" style="margin-bottom:6px;font-size:13px">${p > 0 ? '▲ +' : '▼ '}${fmt(p, 1)} % (${diff(curV, prevV, d, u)})</span>`) + '</div>'
       + `<div><div class="bars">${bars}</div><div class="blab">${labels}</div></div>`
       + `<div class="legend"><span><i class="c"></i>${esc(nm.cur)}</span><span><i></i>${esc(prevName)}</span></div>`
       + `<div class="kpis">${kpis.map((k) => `<div><span class="lbl">${k.l}</span><b>${k.v}</b></div>`).join('')}</div>`
