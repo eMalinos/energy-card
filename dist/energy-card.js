@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
