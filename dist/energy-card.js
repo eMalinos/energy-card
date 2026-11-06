@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
@@ -308,8 +308,8 @@ const ICON = {
 };
 
 export const STYLE = `
-:host{display:block;--ec-accent:#0288d1;--ec-text:var(--primary-text-color,#212121);--ec-muted:var(--secondary-text-color,#6b6b6b);--ec-soft:var(--secondary-background-color,#f5f5f5);--ec-bg:var(--ha-card-background,var(--card-background-color,#ffffff));--ec-line:var(--divider-color,#e6e6e6)}
-.card{background:var(--ec-bg);color:var(--ec-text);border-radius:var(--ha-card-border-radius,20px);padding:18px 20px 16px;box-shadow:var(--ha-card-box-shadow,0 1px 4px rgba(0,0,0,.08));display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-family:inherit}
+:host{display:block;--ec-accent:#0288d1;--ec-text:var(--primary-text-color,#212121);--ec-muted:var(--secondary-text-color,#6b6b6b);--ec-soft:var(--secondary-background-color,#f5f5f5);--ec-bg:var(--card-background-color,#ffffff);--ec-line:var(--divider-color,#e6e6e6)}
+.card{background:var(--ha-card-background,var(--ec-bg));color:var(--ec-text);border-radius:var(--ha-card-border-radius,20px);padding:18px 20px 16px;box-shadow:var(--ha-card-box-shadow,0 1px 4px rgba(0,0,0,.08));display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-family:inherit}
 button,input{font-family:inherit;color:inherit}
 button{cursor:pointer}
 .muted{color:var(--ec-muted)}
