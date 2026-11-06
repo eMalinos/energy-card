@@ -124,6 +124,16 @@ test('buckets and pct', () => {
 });
 
 test('normalizeConfig', () => {
+  assert.equal(normalizeConfig({ ...CFG, accent: '#ef6c00' }).accent, '#ef6c00');
+  assert.equal(normalizeConfig({ ...CFG, accent: 'url(https://example.com/x.png)' }).accent, '#0288d1');
+  assert.equal(normalizeConfig({ ...CFG, accent: 'red;background:url(x)' }).accent, '#0288d1');
+  assert.equal(normalizeConfig({ ...CFG, accent: 'var(--x, url(https://example.com/t.png))' }).accent, '#0288d1');
+  assert.deepEqual(normalizeConfig({ ...CFG, phase_entities: 'sensor.x' }).phase_entities, []);
+  const l = normalizeConfig({ ...CFG, price_lists: [{ ...SINGLE, vt: '5000', poze: '600', nt: '' }] }).price_lists[0];
+  assert.deepEqual([l.vt, l.poze, l.nt], [5000, 600, null]);
+  const j = normalizeConfig({ ...CFG, price_lists: [{ ...SINGLE, vt: 'abc', poze: '5,2' }] }).price_lists[0];
+  assert.deepEqual([j.vt, j.poze], [0, 5.2]);
+  assert.equal(ntMinutes({ ...D25D, nt_windows: { workday: ['22:00', 7, '00:00-04:10'], weekend_holiday: [] } }, at(2026, 11, 10, 1)), 60);
   for (const k of Object.keys(CFG)) {
     const c = { ...CFG };
     delete c[k];

@@ -1,10 +1,12 @@
+**English** · [Čeština](README.cs.md)
+
 # Energy Card
 
 A Home Assistant card for household electricity: how much was used and what it cost today, this month and this year, compared with the previous period and the same period last year, plus the meter reading as on the physical meter. Built for Czech two-tariff contracts (VT / NT by time of day) and written in Czech.
 
 | Card | Statistics | Meter |
 |---|---|---|
-| ![Card](docs/card.png) | ![Statistics](docs/stats.png) | ![Meter](docs/meter.png) |
+| ![Card](https://raw.githubusercontent.com/eMalinos/energy-card/main/docs/card.png) | ![Statistics](https://raw.githubusercontent.com/eMalinos/energy-card/main/docs/stats.png) | ![Meter](https://raw.githubusercontent.com/eMalinos/energy-card/main/docs/meter.png) |
 
 ## Features
 
@@ -22,9 +24,9 @@ A Home Assistant card for household electricity: how much was used and what it c
 
 **Manual:** copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
 
-Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.2.0`, type **JavaScript module** → reload the browser.
+Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.2.1`, type **JavaScript module** → reload the browser.
 
-After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.2.0`), otherwise browsers keep the old file.
+After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.2.1`), otherwise browsers keep the old file.
 
 ## Configuration
 
