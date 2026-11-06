@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
@@ -43,6 +43,9 @@ export function toDay(v) {
   return Number.isNaN(+d) ? String(v) : isoDay(d);
 }
 
+// `accent` lands in CSS backgrounds: a colour only, never url(...) or anything else.
+const isColor = (v) => typeof v === 'string' && !/var\(|url\(/i.test(v) && (globalThis.CSS?.supports ? CSS.supports('color', v) : /^#[0-9a-f]{3,8}$/i.test(v));
+
 export function normalizeConfig(config) {
   for (const k of REQUIRED) {
     if (!config || !config[k]) throw new Error(`energy-card: ${k} is required`);
@@ -52,12 +55,19 @@ export function normalizeConfig(config) {
     try { lists = JSON.parse(lists); } catch { throw new Error('energy-card: price_lists is not valid JSON'); }
   }
   if (!Array.isArray(lists)) throw new Error('energy-card: price_lists must be a list');
-  lists = lists.map((l) => ({ ...l, valid_from: toDay(l.valid_from), valid_to: toDay(l.valid_to) }));
+  const num = (v) => { // "200" + 1.5 must not concatenate; "5,2" is 5.2; junk is no price
+    const x = typeof v === 'number' ? v : parseNum(v);
+    return Number.isFinite(x) ? x : null;
+  };
+  lists = lists.map((l) => ({
+    ...l, valid_from: toDay(l.valid_from), valid_to: toDay(l.valid_to),
+    vt: num(l.vt) ?? 0, nt: num(l.nt), poze: num(l.poze) ?? 0, fixed: num(l.fixed) ?? 0,
+  }));
   return {
     ...config,
-    phase_entities: config.phase_entities || [],
+    phase_entities: Array.isArray(config.phase_entities) ? config.phase_entities : [],
     price_lists: lists.sort((a, b) => a.valid_from.localeCompare(b.valid_from)),
-    accent: config.accent || '#0288d1',
+    accent: isColor(config.accent) ? config.accent : '#0288d1',
   };
 }
 
@@ -93,7 +103,7 @@ export function listFor(lists, date) {
 }
 
 const toMin = (s) => {
-  const [h, m] = s.trim().split(':').map(Number);
+  const [h, m] = String(s ?? '').trim().split(':').map(Number);
   return h * 60 + m;
 };
 
@@ -104,7 +114,8 @@ export function ntMinutes(list, start) {
   const to = from + 60;
   let n = 0;
   for (const w of list.nt_windows?.[dayType(start)] || []) {
-    const [a, b] = w.split(/[-–]/).map(toMin);
+    const [a, b] = String(w).split(/[-–]/).map(toMin);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue; // not "HH:MM-HH:MM"
     const segs = b > a ? [[a, b]] : [[a, 1440], [0, b]]; // `24:00` = midnight; a window over midnight wraps
     for (const [s, e] of segs) n += Math.max(0, Math.min(to, e) - Math.max(from, s));
   }
@@ -278,7 +289,7 @@ export async function fetchHours(hass, entity, start, end) {
     types: ['change'],
     units: { energy: 'kWh' },
   });
-  return (res?.[entity] || []).map((x) => ({ start: new Date(x.start), kwh: x.change ?? 0 }));
+  return (res?.[entity] || []).map((x) => ({ start: new Date(x.start), kwh: Number(x.change) || 0 })).filter((h) => !Number.isNaN(+h.start));
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -787,8 +798,9 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
   }
 
   _history() {
-    const entries = this._hass.states[this._cfg.meter_history]?.attributes?.entries;
-    if (!Array.isArray(entries) || !entries.length) return '<div class="row"><span></span><span class="muted">Zatím žádné záznamy</span></div>';
+    const raw = this._hass.states[this._cfg.meter_history]?.attributes?.entries;
+    const entries = Array.isArray(raw) ? raw.filter((e) => e && typeof e === 'object') : [];
+    if (!entries.length) return '<div class="row"><span></span><span class="muted">Zatím žádné záznamy</span></div>';
     const v = (x) => fmt(Number(x), 1);
     return [...entries].reverse().map((e) => {
       const t = new Date(e.time);
