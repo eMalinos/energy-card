@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
@@ -308,7 +308,7 @@ const ICON = {
 };
 
 export const STYLE = `
-:host{display:block;--ec-accent:var(--hfb-accent,#0288d1);--ec-text:var(--hfb-text,var(--primary-text-color,#212121));--ec-muted:var(--hfb-text-2,var(--secondary-text-color,#6b6b6b));--ec-soft:var(--hfb-fill,var(--secondary-background-color,#f5f5f5));--ec-bg:var(--hfb-card,var(--card-background-color,#ffffff));--ec-line:var(--hfb-border,var(--divider-color,#e6e6e6))}
+:host{display:block;--ec-accent:var(--hfb-accent,#0288d1);--ec-text:var(--hfb-text,var(--primary-text-color,#212121));--ec-muted:var(--hfb-text-2,var(--secondary-text-color,#6b6b6b));--ec-tile-bg:var(--hfb-tile-bg,var(--ec-soft));--ec-tile-border:var(--hfb-tile-border,none);--ec-tile-shadow:var(--hfb-tile-shadow,none);--ec-tile-radius:var(--hfb-tile-radius,14px);--ec-soft:var(--hfb-fill,var(--secondary-background-color,#f5f5f5));--ec-bg:var(--hfb-card,var(--card-background-color,#ffffff));--ec-line:var(--hfb-border,var(--divider-color,#e6e6e6))}
 .card{background:var(--ha-card-background,var(--ec-bg));color:var(--ec-text);border-radius:var(--ha-card-border-radius,var(--hfb-card-radius,20px));padding:18px 20px 16px;box-shadow:var(--ha-card-box-shadow,var(--hfb-card-shadow,0 1px 4px rgba(0,0,0,.08)));display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-family:inherit}
 button,input{font-family:inherit;color:inherit}
 button{cursor:pointer}
@@ -322,7 +322,7 @@ button{cursor:pointer}
 .now b{font-size:22px;font-weight:700}
 .now small{font-size:11px;color:var(--ec-muted);display:block}
 .unit{font-size:13px;font-weight:500;color:var(--ec-muted)}
-.meter{display:flex;align-items:center;gap:12px;background:var(--ec-soft);border-radius:14px;padding:10px 10px 10px 14px;color:var(--ec-muted)}
+.meter{display:flex;align-items:center;gap:12px;background:var(--ec-tile-bg);border:var(--ec-tile-border);box-shadow:var(--ec-tile-shadow);border-radius:var(--ec-tile-radius);padding:10px 10px 10px 14px;color:var(--ec-muted)}
 .meter .regs{flex:1;min-width:0;display:flex;gap:18px;flex-wrap:wrap}
 .reg{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;color:var(--ec-text)}
 .reg small{font-size:12px;font-weight:500;color:var(--ec-muted)}
@@ -381,14 +381,14 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .legend i{width:10px;height:10px;border-radius:3px;background:#c9c9c9}
 .legend i.c{background:var(--ec-accent)}
 .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.kpis div{background:var(--ec-soft);border-radius:14px;padding:10px 12px}
+.kpis div{background:var(--ec-tile-bg);border:var(--ec-tile-border);box-shadow:var(--ec-tile-shadow);border-radius:var(--ec-tile-radius);padding:10px 12px}
 .kpis b{display:block;font-size:15px;font-weight:500}
 .intro{font-size:13px;color:var(--ec-muted);line-height:1.45}
 .flds{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .fld{display:flex;flex-direction:column;gap:6px}
 .fld label{font-size:12px;color:var(--ec-muted)}
 .fld input{height:44px;border:1px solid var(--ec-line);border-radius:12px;padding:0 12px;font-size:16px;background:var(--ec-bg);box-sizing:border-box;width:100%}
-.prev{background:var(--ec-soft);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.prev{background:var(--ec-tile-bg);border:var(--ec-tile-border);box-shadow:var(--ec-tile-shadow);border-radius:var(--ec-tile-radius);padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:13px}
 .prev div{display:flex;justify-content:space-between;gap:10px}
 .ok{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:#00695c;background:#e0f2f1;border-radius:12px;padding:10px 12px;line-height:1.4}
 .ok svg{flex:none;margin-top:1px}
