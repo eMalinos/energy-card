@@ -125,9 +125,9 @@ test('buckets and pct', () => {
 
 test('normalizeConfig', () => {
   assert.equal(normalizeConfig({ ...CFG, accent: '#ef6c00' }).accent, '#ef6c00');
-  assert.equal(normalizeConfig({ ...CFG, accent: 'url(https://example.com/x.png)' }).accent, '#0288d1');
-  assert.equal(normalizeConfig({ ...CFG, accent: 'red;background:url(x)' }).accent, '#0288d1');
-  assert.equal(normalizeConfig({ ...CFG, accent: 'var(--x, url(https://example.com/t.png))' }).accent, '#0288d1');
+  assert.equal(normalizeConfig({ ...CFG, accent: 'url(https://example.com/x.png)' }).accent, undefined);
+  assert.equal(normalizeConfig({ ...CFG, accent: 'red;background:url(x)' }).accent, undefined);
+  assert.equal(normalizeConfig({ ...CFG, accent: 'var(--x, url(https://example.com/t.png))' }).accent, undefined);
   assert.deepEqual(normalizeConfig({ ...CFG, phase_entities: 'sensor.x' }).phase_entities, []);
   const l = normalizeConfig({ ...CFG, price_lists: [{ ...SINGLE, vt: '5000', poze: '600', nt: '' }] }).price_lists[0];
   assert.deepEqual([l.vt, l.poze, l.nt], [5000, 600, null]);
@@ -142,7 +142,7 @@ test('normalizeConfig', () => {
   const later = { ...SINGLE, valid_from: '2027-01-01' };
   const n = normalizeConfig({ ...CFG, price_lists: JSON.stringify([later, D25D]) });
   assert.deepEqual(n.price_lists.map((l) => l.valid_from), ['2025-02-01', '2027-01-01']);
-  assert.equal(n.accent, '#0288d1');
+  for (const accent of [undefined, '', 'url(x)']) assert.equal(normalizeConfig({ ...CFG, accent }).accent, undefined);
   assert.deepEqual(n.phase_entities, []);
   assert.throws(() => normalizeConfig({ ...CFG, price_lists: '{bad' }), /not valid JSON/);
   assert.deepEqual(normalizeConfig(CFG).price_lists, []);

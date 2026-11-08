@@ -67,7 +67,7 @@ price_lists:
 | `meter_history` | yes | A sensor whose attribute `entries` lists the calibrations, newest last: `{time, kind: align \| replace, vt, nt, old_vt, old_nt}`. |
 | `meter_script` | yes | Script called by the meter pop-up (below). |
 | `price_lists` | no | Price lists, or the same list as a JSON string. Without one, kWh are shown and Kč are not. |
-| `accent` | no | Accent colour, default `#0288d1`. |
+| `accent` | no | Accent colour. Unset: the theme's `--hfb-accent`, else `#0288d1`. |
 
 ### Price list
 

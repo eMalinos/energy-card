@@ -67,7 +67,7 @@ export function normalizeConfig(config) {
     ...config,
     phase_entities: Array.isArray(config.phase_entities) ? config.phase_entities : [],
     price_lists: lists.sort((a, b) => a.valid_from.localeCompare(b.valid_from)),
-    accent: isColor(config.accent) ? config.accent : '#0288d1',
+    accent: isColor(config.accent) ? config.accent : undefined, // unset: --hfb-accent, then blue
   };
 }
 
@@ -308,7 +308,7 @@ const ICON = {
 };
 
 export const STYLE = `
-:host{display:block;--ec-accent:var(--hfb-accent,#0288d1);--ec-text:var(--hfb-text,var(--primary-text-color,#212121));--ec-muted:var(--hfb-text-2,var(--secondary-text-color,#6b6b6b));--ec-soft:var(--hfb-fill,var(--secondary-background-color,#f5f5f5));--ec-bg:var(--hfb-card,var(--card-background-color,#ffffff));--ec-line:var(--hfb-border,var(--divider-color,#e6e6e6));--ec-ok:var(--success-color,#00695c)}
+:host{display:block;--ec-accent:var(--hfb-accent,#0288d1);--ec-text:var(--hfb-text,var(--primary-text-color,#212121));--ec-muted:var(--hfb-text-2,var(--secondary-text-color,#6b6b6b));--ec-soft:var(--hfb-fill,var(--secondary-background-color,#f5f5f5));--ec-bg:var(--hfb-card,var(--card-background-color,#ffffff));--ec-line:var(--hfb-border,var(--divider-color,#e6e6e6))}
 .card{background:var(--ha-card-background,var(--ec-bg));color:var(--ec-text);border-radius:var(--ha-card-border-radius,var(--hfb-card-radius,20px));padding:18px 20px 16px;box-shadow:var(--ha-card-box-shadow,var(--hfb-card-shadow,0 1px 4px rgba(0,0,0,.08)));display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-family:inherit}
 button,input{font-family:inherit;color:inherit}
 button{cursor:pointer}
@@ -339,7 +339,7 @@ button{cursor:pointer}
 .pf .c{width:78px;height:78px;box-sizing:border-box;border-radius:50%;background:var(--ec-bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;font-weight:500;color:var(--ec-text)}
 .seg{display:flex;background:var(--hfb-seg-track,var(--ec-soft));border-radius:12px;padding:3px;gap:3px}
 .seg button{flex:1;height:36px;border:0;border-radius:10px;font-size:13px;font-weight:500;background:transparent;color:var(--ec-muted)}
-.seg button[aria-selected="true"],.seg button[aria-checked="true"]{background:var(--hfb-seg-on,var(--ec-bg));color:var(--hfb-seg-on-color,var(--ec-text));box-shadow:var(--hfb-seg-on-shadow,0 1px 3px rgba(0,0,0,.12));font-weight:600}
+.seg button[aria-selected="true"],.seg button[aria-checked="true"]{background:var(--hfb-seg-on,var(--ec-bg));color:var(--hfb-seg-on-color,var(--ec-text));box-shadow:var(--hfb-seg-on-shadow,0 1px 3px rgba(0,0,0,.12))}
 .seg.units button{flex:none;height:32px;padding:0 12px}
 .sum{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .sum>div{flex:1;min-width:160px}
@@ -390,7 +390,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .fld input{height:44px;border:1px solid var(--ec-line);border-radius:12px;padding:0 12px;font-size:16px;background:var(--ec-bg);box-sizing:border-box;width:100%}
 .prev{background:var(--ec-soft);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:13px}
 .prev div{display:flex;justify-content:space-between;gap:10px}
-.ok{display:flex;gap:10px;align-items:flex-start;font-size:12px;--lv:var(--ec-ok);color:var(--lv);background:color-mix(in srgb,var(--lv) var(--hfb-alert-tint,12%),transparent);border-radius:12px;padding:10px 12px;line-height:1.4}
+.ok{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:#00695c;background:#e0f2f1;border-radius:12px;padding:10px 12px;line-height:1.4}
 .ok svg{flex:none;margin-top:1px}
 .hist{display:flex;flex-direction:column;gap:2px}
 .hist .row{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--ec-line);font-size:13px}
@@ -444,7 +444,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
   setConfig(config) {
     this._cfg = normalizeConfig(config);
     this._cache = {};
-    if (isColor(config?.accent)) this.style.setProperty('--ec-accent', this._cfg.accent); else this.style.removeProperty('--ec-accent'); // unset: --hfb-accent, then blue
+    if (this._cfg.accent) this.style.setProperty('--ec-accent', this._cfg.accent); else this.style.removeProperty('--ec-accent');
     if (this._hass) { this._render(); this._load(this._gran); }
   }
 

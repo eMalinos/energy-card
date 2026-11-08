@@ -67,7 +67,7 @@ price_lists:
 | `meter_history` | ano | Senzor, jehož atribut `entries` obsahuje seznam kalibrací, nejnovější poslední: `{time, kind: align \| replace, vt, nt, old_vt, old_nt}`. |
 | `meter_script` | ano | Skript, který volá okno elektroměru (viz níže). |
 | `price_lists` | ne | Ceníky, nebo tentýž seznam jako JSON řetězec. Bez ceníku se zobrazují kWh, ale ne Kč. |
-| `accent` | ne | Barva zvýraznění, výchozí `#0288d1`. |
+| `accent` | ne | Barva zvýraznění. Nenastaveno: `--hfb-accent` motivu, jinak `#0288d1`. |
 
 ### Ceník
 

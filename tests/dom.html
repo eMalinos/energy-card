@@ -8,7 +8,7 @@
   Browser checks with a fake hass (states + callWS returning generated hours). Run:
   python3 -m http.server 8765 &
   "Google Chrome" --headless=new --virtual-time-budget=5000 --dump-dom http://localhost:8765/tests/dom.html | grep RESULT
-  Looks: ?theme=homecraft (Břidlice light tokens) | dark (Břidlice dark tokens) | none = HA fallbacks; the RESULT line runs for each.
+  Looks: ?accent=none drops the configured accent. ?theme=homecraft (Břidlice light tokens) | dark (Břidlice dark tokens) | none = HA fallbacks; the RESULT line runs for each.
   Screenshots: ?shot=card | stats | meter, e.g.
   "Google Chrome" --headless=new --virtual-time-budget=5000 --window-size=512,1000 --screenshot=docs/card.png "http://localhost:8765/tests/dom.html?shot=card"
 -->
@@ -75,7 +75,7 @@
     phase_entities: ['sensor.phase_a', 'sensor.phase_b', 'sensor.phase_c'],
     meter_vt: 'sensor.hfb_energy_meter_vt', meter_nt: 'sensor.hfb_energy_meter_nt',
     meter_history: 'sensor.hfb_energy_meter_history', meter_script: 'script.hfb_energy_meter_set',
-    price_lists: JSON.stringify([D25D]), accent: '#0288d1',
+    price_lists: JSON.stringify([D25D]), accent: q.get('accent') === 'none' ? undefined : '#0288d1',
   });
   card.hass = hass;
   document.getElementById('box').appendChild(card);
@@ -93,6 +93,9 @@
   if (shot) { document.getElementById('out').remove(); throw 'shot'; }
 
   const r = {};
+  // ?accent=none: the accent follows --hfb-accent, else the default blue
+  const wantAccent = q.get('accent') !== 'none' || theme !== 'homecraft' && theme !== 'dark' ? '#0288d1' : theme === 'dark' ? '#86A9D1' : '#4F6B8C';
+  r.accentVar = getComputedStyle(card).getPropertyValue('--ec-accent').trim().toLowerCase() === wantAccent.toLowerCase();
   r.statsQuery = ws[0]?.type === 'recorder/statistics_during_period' && ws[0].period === 'hour' && ws[0].types[0] === 'change' && ws[0].units?.energy === 'kWh' && ws.length === 3;
   r.header = $('.sub').textContent === 'L1 412 W · L2 690 W · L3 358 W' && $('.now b').textContent.replace(/\s/g, ' ') === '1 460';
   r.twoRegisters = root.querySelectorAll('.meter .reg').length === 2 && $('.meter .reg').textContent.replace(/\s/g, ' ').startsWith('31 204,4');
