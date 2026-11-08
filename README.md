@@ -24,9 +24,9 @@ A Home Assistant card for household electricity: how much was used and what it c
 
 **Manual:** copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
 
-Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.2.2`, type **JavaScript module** → reload the browser.
+Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.3.0`, type **JavaScript module** → reload the browser.
 
-After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.2.2`), otherwise browsers keep the old file.
+After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.3.0`), otherwise browsers keep the old file.
 
 ## Configuration
 
@@ -67,7 +67,7 @@ price_lists:
 | `meter_history` | yes | A sensor whose attribute `entries` lists the calibrations, newest last: `{time, kind: align \| replace, vt, nt, old_vt, old_nt}`. |
 | `meter_script` | yes | Script called by the meter pop-up (below). |
 | `price_lists` | no | Price lists, or the same list as a JSON string. Without one, kWh are shown and Kč are not. |
-| `accent` | no | Accent colour, default `#0288d1`. |
+| `accent` | no | Accent colour. Unset: the theme's `--hfb-accent`, else `#0288d1`. |
 
 ### Price list
 
@@ -124,6 +124,10 @@ python3 -m http.server 8765 &
 ```
 
 `tests/dom.html?shot=card|stats|statsPast|meter` renders the card with a fake `hass` for screenshots.
+
+## Changelog
+
+- **0.3.0** reads the Homecraft `--hfb-*` tokens (colours, card surface, buttons, segmented control, delta chips, header dot), each with the HA fallback it had before; without the tokens the card looks as in 0.2.2. An unset `accent` follows `--hfb-accent`.
 
 ## License
 

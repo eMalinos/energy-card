@@ -10,7 +10,7 @@
  * weekend days). https://github.com/eMalinos/energy-card
  */
 
-const VERSION = '0.2.2';
+const VERSION = '0.3.0';
 
 const REQUIRED = ['energy_entity', 'power_entity', 'meter_vt', 'meter_nt', 'meter_history', 'meter_script'];
 const CACHE_MS = 5 * 60 * 1000;
@@ -67,7 +67,7 @@ export function normalizeConfig(config) {
     ...config,
     phase_entities: Array.isArray(config.phase_entities) ? config.phase_entities : [],
     price_lists: lists.sort((a, b) => a.valid_from.localeCompare(b.valid_from)),
-    accent: isColor(config.accent) ? config.accent : '#0288d1',
+    accent: isColor(config.accent) ? config.accent : undefined, // unset: --hfb-accent, then blue
   };
 }
 
@@ -308,13 +308,13 @@ const ICON = {
 };
 
 export const STYLE = `
-:host{display:block;--ec-accent:#0288d1;--ec-text:var(--primary-text-color,#212121);--ec-muted:var(--secondary-text-color,#6b6b6b);--ec-soft:var(--secondary-background-color,#f5f5f5);--ec-bg:var(--card-background-color,#ffffff);--ec-line:var(--divider-color,#e6e6e6)}
-.card{background:var(--ha-card-background,var(--ec-bg));color:var(--ec-text);border-radius:var(--ha-card-border-radius,20px);padding:18px 20px 16px;box-shadow:var(--ha-card-box-shadow,0 1px 4px rgba(0,0,0,.08));display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-family:inherit}
+:host{display:block;--ec-accent:var(--hfb-accent,#0288d1);--ec-text:var(--hfb-text,var(--primary-text-color,#212121));--ec-muted:var(--hfb-text-2,var(--secondary-text-color,#6b6b6b));--ec-soft:var(--hfb-fill,var(--secondary-background-color,#f5f5f5));--ec-bg:var(--hfb-card,var(--card-background-color,#ffffff));--ec-line:var(--hfb-border,var(--divider-color,#e6e6e6))}
+.card{background:var(--ha-card-background,var(--ec-bg));color:var(--ec-text);border-radius:var(--ha-card-border-radius,var(--hfb-card-radius,20px));padding:18px 20px 16px;box-shadow:var(--ha-card-box-shadow,var(--hfb-card-shadow,0 1px 4px rgba(0,0,0,.08)));display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-family:inherit}
 button,input{font-family:inherit;color:inherit}
 button{cursor:pointer}
 .muted{color:var(--ec-muted)}
 .head{display:flex;align-items:center;gap:10px}
-.ico{width:36px;height:36px;flex:none;border-radius:50%;background:#fff3e0;color:#ef6c00;display:flex;align-items:center;justify-content:center}
+.ico{width:36px;height:36px;flex:none;border-radius:50%;background:var(--hfb-heat-dot,#fff3e0);box-shadow:var(--hfb-heat-glow,none);color:var(--hfb-dot-on-icon,#ef6c00);display:flex;align-items:center;justify-content:center}
 .head h2{margin:0;font-size:16px;font-weight:500}
 .grow{flex:1;min-width:0}
 .sub{font-size:12px;color:var(--ec-muted)}
@@ -327,7 +327,7 @@ button{cursor:pointer}
 .reg{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;color:var(--ec-text)}
 .reg small{font-size:12px;font-weight:500;color:var(--ec-muted)}
 .lbl{font-size:11px;color:var(--ec-muted)}
-.btn2{height:44px;border:0;border-radius:12px;background:var(--ec-bg);padding:0 14px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.btn2{height:44px;border:0;border-radius:12px;background:var(--hfb-btn-raised-bg,var(--ec-bg));padding:0 14px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;box-shadow:var(--hfb-btn-raised-shadow,0 1px 3px rgba(0,0,0,.1))}
 .flow{position:relative;background:var(--ec-soft);border-radius:16px;height:150px}
 .flow>svg{position:absolute;inset:0;width:100%;height:100%}
 @keyframes flow{to{stroke-dashoffset:-20}}
@@ -337,9 +337,9 @@ button{cursor:pointer}
 .flow.idle .fl{display:none}
 .pf{position:absolute;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--ec-muted);white-space:nowrap}
 .pf .c{width:78px;height:78px;box-sizing:border-box;border-radius:50%;background:var(--ec-bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;font-weight:500;color:var(--ec-text)}
-.seg{display:flex;background:var(--ec-soft);border-radius:12px;padding:3px;gap:3px}
+.seg{display:flex;background:var(--hfb-seg-track,var(--ec-soft));border-radius:12px;padding:3px;gap:3px}
 .seg button{flex:1;height:36px;border:0;border-radius:10px;font-size:13px;font-weight:500;background:transparent;color:var(--ec-muted)}
-.seg button[aria-selected="true"],.seg button[aria-checked="true"]{background:var(--ec-bg);color:var(--ec-text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg button[aria-selected="true"],.seg button[aria-checked="true"]{background:var(--hfb-seg-on,var(--ec-bg));color:var(--hfb-seg-on-color,var(--ec-text));box-shadow:var(--hfb-seg-on-shadow,0 1px 3px rgba(0,0,0,.12))}
 .seg.units button{flex:none;height:32px;padding:0 12px}
 .sum{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .sum>div{flex:1;min-width:160px}
@@ -349,10 +349,10 @@ button{cursor:pointer}
 .kc b{font-size:18px;font-weight:500}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:-4px}
 .chip{border-radius:14px;padding:6px 12px;font-size:12px;font-weight:700}
-.chip.up{background:#fff3e0;color:#b34700}
-.chip.down{background:#e0f2f1;color:#00695c}
+.chip.up{background:var(--hfb-delta-up-bg,#fff3e0);color:var(--hfb-delta-up-color,#b34700)}
+.chip.down{background:var(--hfb-delta-down-bg,#e0f2f1);color:var(--hfb-delta-down-color,#00695c)}
 .note{font-size:12px;color:var(--ec-muted)}
-.cta{height:44px;border:0;border-radius:14px;background:var(--ec-text);color:var(--ec-bg);padding:0 18px;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px}
+.cta{height:44px;border:0;border-radius:14px;background:var(--hfb-btn-primary-bg,var(--ec-text));color:var(--hfb-btn-primary-color,var(--ec-bg));padding:0 18px;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px}
 .cta:disabled{opacity:.4;cursor:default}
 dialog{border:0;padding:0;border-radius:20px;background:var(--ec-bg);color:var(--ec-text);width:min(560px,calc(100vw - 24px));max-height:calc(100vh - 24px);box-shadow:0 12px 40px rgba(0,0,0,.14)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -444,7 +444,7 @@ class EnergyCard extends (globalThis.HTMLElement ?? class {}) {
   setConfig(config) {
     this._cfg = normalizeConfig(config);
     this._cache = {};
-    this.style.setProperty('--ec-accent', this._cfg.accent);
+    if (this._cfg.accent) this.style.setProperty('--ec-accent', this._cfg.accent); else this.style.removeProperty('--ec-accent');
     if (this._hass) { this._render(); this._load(this._gran); }
   }
 

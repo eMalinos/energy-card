@@ -8,6 +8,7 @@
   Browser checks with a fake hass (states + callWS returning generated hours). Run:
   python3 -m http.server 8765 &
   "Google Chrome" --headless=new --virtual-time-budget=5000 --dump-dom http://localhost:8765/tests/dom.html | grep RESULT
+  Looks: ?accent=none drops the configured accent. ?theme=homecraft (Břidlice light tokens) | dark (Břidlice dark tokens) | none = HA fallbacks; the RESULT line runs for each.
   Screenshots: ?shot=card | stats | meter, e.g.
   "Google Chrome" --headless=new --virtual-time-budget=5000 --window-size=512,1000 --screenshot=docs/card.png "http://localhost:8765/tests/dom.html?shot=card"
 -->
@@ -18,6 +19,15 @@
   addEventListener('error', (e) => errors.push(e.message));
   const origError = console.error;
   console.error = (...a) => { errors.push(a.join(' ')); origError(...a); };
+
+  const q = new URLSearchParams(location.search);
+  const THEMES = {
+    homecraft: '--hfb-card:#fff;--hfb-border:#DFE3E8;--hfb-fill:#F0F2F5;--hfb-text:#1C2128;--hfb-text-2:#6E7682;--hfb-accent:#4F6B8C;--hfb-card-radius:20px;--hfb-card-shadow:0 1px 4px rgba(0,0,0,.06);--hfb-btn-raised-bg:#fff;--hfb-btn-raised-shadow:0 1px 3px rgba(0,0,0,.1);--hfb-seg-track:#F0F2F5;--hfb-seg-on:#fff;--hfb-seg-on-shadow:0 1px 3px rgba(0,0,0,.1);--hfb-seg-on-color:#1C2128;--hfb-dot-idle:#fff;--hfb-hot-tile:color-mix(in srgb,#E8592C 8%,#F0F2F5);--hfb-run-dot:linear-gradient(145deg,color-mix(in srgb,#4F6B8C 65%,#fff),#4F6B8C);--hfb-run-glow:0 2px 6px color-mix(in srgb,#4F6B8C 40%,transparent);--success-color:#1E7A46;--info-color:#4F6B8C;--error-color:#E5484D;--disabled-text-color:#A9AFB7;--hfb-btn-primary-bg:#1C2128;--hfb-btn-primary-color:#fff;--hfb-heat-dot:linear-gradient(145deg,#FFA66E,#E8592C);--hfb-heat-glow:0 0 0 3px rgba(232,89,44,.14),0 2px 6px rgba(232,89,44,.32);--hfb-dot-on-icon:#fff;--hfb-delta-up-bg:#FCE9DF;--hfb-delta-up-color:#B5471F;--hfb-delta-down-bg:#E0F0E7;--hfb-delta-down-color:#1E7A46;--warning-color:#B5471F',
+    dark: '--hfb-card:#181C22;--hfb-border:#262C35;--hfb-fill:#21262E;--hfb-text:#E9EDF2;--hfb-text-2:#949CA8;--hfb-accent:#86A9D1;--hfb-card-radius:20px;--hfb-card-shadow:0 1px 4px rgba(0,0,0,.4);--hfb-btn-raised-bg:#181C22;--hfb-btn-raised-shadow:0 1px 3px rgba(0,0,0,.5);--hfb-seg-track:#21262E;--hfb-seg-on:#181C22;--hfb-seg-on-shadow:0 1px 3px rgba(0,0,0,.5);--hfb-seg-on-color:#E9EDF2;--hfb-dot-idle:#181C22;--hfb-hot-tile:color-mix(in srgb,#E8592C 10%,#21262E);--hfb-run-dot:linear-gradient(145deg,color-mix(in srgb,#86A9D1 65%,#fff),#86A9D1);--hfb-run-glow:0 2px 6px color-mix(in srgb,#86A9D1 40%,transparent);--success-color:#5FD08F;--info-color:#86A9D1;--error-color:#FF8A80;--disabled-text-color:#5C636D;--hfb-btn-primary-bg:#E9EDF2;--hfb-btn-primary-color:#181C22;--hfb-heat-dot:linear-gradient(145deg,#FFA66E,#E8592C);--hfb-heat-glow:0 0 0 3px rgba(232,89,44,.14),0 2px 6px rgba(232,89,44,.32);--hfb-dot-on-icon:#fff;--hfb-delta-up-bg:#3A2A22;--hfb-delta-up-color:#FFA66E;--hfb-delta-down-bg:#1F3A2C;--hfb-delta-down-color:#5FD08F;--warning-color:#FFA66E',
+  };
+  const theme = q.get('theme');
+  if (THEMES[theme]) document.documentElement.style.cssText = THEMES[theme];
+  document.body.style.background = theme === 'dark' ? '#0F1216' : theme === 'homecraft' ? '#ECEEF1' : '#efefef';
 
   await import('../dist/energy-card.js');
 
@@ -65,7 +75,7 @@
     phase_entities: ['sensor.phase_a', 'sensor.phase_b', 'sensor.phase_c'],
     meter_vt: 'sensor.hfb_energy_meter_vt', meter_nt: 'sensor.hfb_energy_meter_nt',
     meter_history: 'sensor.hfb_energy_meter_history', meter_script: 'script.hfb_energy_meter_set',
-    price_lists: JSON.stringify([D25D]), accent: '#0288d1',
+    price_lists: JSON.stringify([D25D]), accent: q.get('accent') === 'none' ? undefined : '#0288d1',
   });
   card.hass = hass;
   document.getElementById('box').appendChild(card);
@@ -83,6 +93,9 @@
   if (shot) { document.getElementById('out').remove(); throw 'shot'; }
 
   const r = {};
+  // ?accent=none: the accent follows --hfb-accent, else the default blue
+  const wantAccent = q.get('accent') !== 'none' || theme !== 'homecraft' && theme !== 'dark' ? '#0288d1' : theme === 'dark' ? '#86A9D1' : '#4F6B8C';
+  r.accentVar = getComputedStyle(card).getPropertyValue('--ec-accent').trim().toLowerCase() === wantAccent.toLowerCase();
   r.statsQuery = ws[0]?.type === 'recorder/statistics_during_period' && ws[0].period === 'hour' && ws[0].types[0] === 'change' && ws[0].units?.energy === 'kWh' && ws.length === 3;
   r.header = $('.sub').textContent === 'L1 412 W · L2 690 W · L3 358 W' && $('.now b').textContent.replace(/\s/g, ' ') === '1 460';
   r.twoRegisters = root.querySelectorAll('.meter .reg').length === 2 && $('.meter .reg').textContent.replace(/\s/g, ' ').startsWith('31 204,4');
