@@ -24,9 +24,9 @@ Karta do Home Assistantu pro elektřinu v domácnosti: kolik se spotřebovalo a 
 
 **Ručně:** zkopírujte [`dist/energy-card.js`](dist/energy-card.js) (nebo soubor z posledního release) do složky `config/www/` v Home Assistantu a přidejte ho jako resource dashboardu:
 
-Nastavení → Ovládací panely → ⋮ → Zdroje → Přidat zdroj → URL `/local/energy-card.js?v=0.2.2`, typ **JavaScript modul** → obnovit prohlížeč.
+Nastavení → Ovládací panely → ⋮ → Zdroje → Přidat zdroj → URL `/local/energy-card.js?v=0.3.0`, typ **JavaScript modul** → obnovit prohlížeč.
 
-Po nahrání nové verze změňte `?v=` v URL resource (např. `?v=0.2.2`), jinak prohlížeče drží starý soubor.
+Po nahrání nové verze změňte `?v=` v URL resource (např. `?v=0.3.0`), jinak prohlížeče drží starý soubor.
 
 ## Konfigurace
 
@@ -124,6 +124,10 @@ python3 -m http.server 8765 &
 ```
 
 `tests/dom.html?shot=card|stats|statsPast|meter` vykreslí kartu s falešným `hass` pro snímky obrazovky.
+
+## Změny
+
+- **0.3.0** čte tokeny `--hfb-*` motivu Homecraft (barvy, povrch karty, tlačítka, segmentový přepínač, čipy změn, ikona v hlavičce), každý s dosavadním HA fallbackem; bez tokenů vypadá karta jako ve verzi 0.2.2. Nenastavený `accent` následuje `--hfb-accent`.
 
 ## Licence
 

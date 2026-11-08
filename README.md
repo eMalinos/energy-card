@@ -24,9 +24,9 @@ A Home Assistant card for household electricity: how much was used and what it c
 
 **Manual:** copy [`dist/energy-card.js`](dist/energy-card.js) (or the file from the latest release) to your Home Assistant `config/www/` folder, then add it as a dashboard resource:
 
-Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.2.2`, type **JavaScript module** → reload the browser.
+Settings → Dashboards → ⋮ → Resources → Add resource → URL `/local/energy-card.js?v=0.3.0`, type **JavaScript module** → reload the browser.
 
-After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.2.2`), otherwise browsers keep the old file.
+After copying a new version, change `?v=` in the resource URL (e.g. `?v=0.3.0`), otherwise browsers keep the old file.
 
 ## Configuration
 
@@ -124,6 +124,10 @@ python3 -m http.server 8765 &
 ```
 
 `tests/dom.html?shot=card|stats|statsPast|meter` renders the card with a fake `hass` for screenshots.
+
+## Changelog
+
+- **0.3.0** reads the Homecraft `--hfb-*` tokens (colours, card surface, buttons, segmented control, delta chips, header dot), each with the HA fallback it had before; without the tokens the card looks as in 0.2.2. An unset `accent` follows `--hfb-accent`.
 
 ## License
 
